@@ -1,0 +1,84 @@
+import { Link, useRouterState } from "@tanstack/react-router";
+import {
+  LayoutDashboard,
+  ShoppingCart,
+  Package,
+  Users,
+  Truck,
+  HandCoins,
+  Receipt,
+  BarChart3,
+  Store,
+} from "lucide-react";
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+} from "@/components/ui/sidebar";
+
+const primary = [
+  { title: "Dashboard", url: "/", icon: LayoutDashboard },
+  { title: "Punto de venta", url: "/pos", icon: ShoppingCart },
+];
+const catalog = [
+  { title: "Inventario", url: "/inventory", icon: Package },
+  { title: "Clientes", url: "/customers", icon: Users },
+  { title: "Proveedores", url: "/suppliers", icon: Truck },
+];
+const finance = [
+  { title: "Cuentas por cobrar", url: "/receivables", icon: HandCoins },
+  { title: "Cuentas por pagar", url: "/payables", icon: Receipt },
+  { title: "Reportes", url: "/reports", icon: BarChart3 },
+];
+
+export function AppSidebar() {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const isActive = (u: string) => (u === "/" ? pathname === "/" : pathname.startsWith(u));
+
+  const renderGroup = (label: string, items: typeof primary) => (
+    <SidebarGroup>
+      <SidebarGroupLabel>{label}</SidebarGroupLabel>
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {items.map((item) => (
+            <SidebarMenuItem key={item.url}>
+              <SidebarMenuButton asChild isActive={isActive(item.url)}>
+                <Link to={item.url} className="flex items-center gap-2">
+                  <item.icon className="h-4 w-4" />
+                  <span>{item.title}</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem>
+          ))}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+
+  return (
+    <Sidebar collapsible="icon">
+      <SidebarHeader className="border-b border-sidebar-border">
+        <div className="flex items-center gap-2 px-2 py-2">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
+            <Store className="h-4 w-4" />
+          </div>
+          <div className="flex flex-col leading-tight">
+            <span className="text-sm font-semibold">Multimarket</span>
+            <span className="text-xs text-sidebar-foreground/70">Sistema de ventas</span>
+          </div>
+        </div>
+      </SidebarHeader>
+      <SidebarContent>
+        {renderGroup("Operación", primary)}
+        {renderGroup("Catálogo", catalog)}
+        {renderGroup("Finanzas", finance)}
+      </SidebarContent>
+    </Sidebar>
+  );
+}
