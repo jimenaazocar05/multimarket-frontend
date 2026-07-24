@@ -9,18 +9,48 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as SuppliersRouteImport } from './routes/suppliers'
+import { Route as ReportsRouteImport } from './routes/reports'
+import { Route as ReceivablesRouteImport } from './routes/receivables'
 import { Route as PosRouteImport } from './routes/pos'
+import { Route as PayablesRouteImport } from './routes/payables'
 import { Route as InventoryRouteImport } from './routes/inventory'
+import { Route as CustomersRouteImport } from './routes/customers'
 import { Route as IndexRouteImport } from './routes/index'
 
+const SuppliersRoute = SuppliersRouteImport.update({
+  id: '/suppliers',
+  path: '/suppliers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportsRoute = ReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReceivablesRoute = ReceivablesRouteImport.update({
+  id: '/receivables',
+  path: '/receivables',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PosRoute = PosRouteImport.update({
   id: '/pos',
   path: '/pos',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PayablesRoute = PayablesRouteImport.update({
+  id: '/payables',
+  path: '/payables',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InventoryRoute = InventoryRouteImport.update({
   id: '/inventory',
   path: '/inventory',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CustomersRoute = CustomersRouteImport.update({
+  id: '/customers',
+  path: '/customers',
   getParentRoute: () => rootRouteImport,
 } as any)
 const IndexRoute = IndexRouteImport.update({
@@ -31,36 +61,102 @@ const IndexRoute = IndexRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/customers': typeof CustomersRoute
   '/inventory': typeof InventoryRoute
+  '/payables': typeof PayablesRoute
   '/pos': typeof PosRoute
+  '/receivables': typeof ReceivablesRoute
+  '/reports': typeof ReportsRoute
+  '/suppliers': typeof SuppliersRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/customers': typeof CustomersRoute
   '/inventory': typeof InventoryRoute
+  '/payables': typeof PayablesRoute
   '/pos': typeof PosRoute
+  '/receivables': typeof ReceivablesRoute
+  '/reports': typeof ReportsRoute
+  '/suppliers': typeof SuppliersRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/customers': typeof CustomersRoute
   '/inventory': typeof InventoryRoute
+  '/payables': typeof PayablesRoute
   '/pos': typeof PosRoute
+  '/receivables': typeof ReceivablesRoute
+  '/reports': typeof ReportsRoute
+  '/suppliers': typeof SuppliersRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/inventory' | '/pos'
+  fullPaths:
+    | '/'
+    | '/customers'
+    | '/inventory'
+    | '/payables'
+    | '/pos'
+    | '/receivables'
+    | '/reports'
+    | '/suppliers'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/inventory' | '/pos'
-  id: '__root__' | '/' | '/inventory' | '/pos'
+  to:
+    | '/'
+    | '/customers'
+    | '/inventory'
+    | '/payables'
+    | '/pos'
+    | '/receivables'
+    | '/reports'
+    | '/suppliers'
+  id:
+    | '__root__'
+    | '/'
+    | '/customers'
+    | '/inventory'
+    | '/payables'
+    | '/pos'
+    | '/receivables'
+    | '/reports'
+    | '/suppliers'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  CustomersRoute: typeof CustomersRoute
   InventoryRoute: typeof InventoryRoute
+  PayablesRoute: typeof PayablesRoute
   PosRoute: typeof PosRoute
+  ReceivablesRoute: typeof ReceivablesRoute
+  ReportsRoute: typeof ReportsRoute
+  SuppliersRoute: typeof SuppliersRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/suppliers': {
+      id: '/suppliers'
+      path: '/suppliers'
+      fullPath: '/suppliers'
+      preLoaderRoute: typeof SuppliersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reports': {
+      id: '/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof ReportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/receivables': {
+      id: '/receivables'
+      path: '/receivables'
+      fullPath: '/receivables'
+      preLoaderRoute: typeof ReceivablesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/pos': {
       id: '/pos'
       path: '/pos'
@@ -68,11 +164,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PosRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/payables': {
+      id: '/payables'
+      path: '/payables'
+      fullPath: '/payables'
+      preLoaderRoute: typeof PayablesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/inventory': {
       id: '/inventory'
       path: '/inventory'
       fullPath: '/inventory'
       preLoaderRoute: typeof InventoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/customers': {
+      id: '/customers'
+      path: '/customers'
+      fullPath: '/customers'
+      preLoaderRoute: typeof CustomersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/': {
@@ -87,9 +197,24 @@ declare module '@tanstack/react-router' {
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  CustomersRoute: CustomersRoute,
   InventoryRoute: InventoryRoute,
+  PayablesRoute: PayablesRoute,
   PosRoute: PosRoute,
+  ReceivablesRoute: ReceivablesRoute,
+  ReportsRoute: ReportsRoute,
+  SuppliersRoute: SuppliersRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
