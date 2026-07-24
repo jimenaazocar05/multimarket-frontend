@@ -1,24 +1,203 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { money, formatDate } from "@/lib/format";
+import { AlertCircle, TrendingUp, DollarSign, ShoppingBag, Package, Users } from "lucide-react";
 
-// No head() here: the home route inherits title/description/og/twitter from
-// __root.tsx, and ships no og:image so serve-time hosting can inject the
-// project's social preview (explicit og:image or latest screenshot).
 export const Route = createFileRoute("/")({
-  component: Index,
+  head: () => ({
+    meta: [
+      { title: "Dashboard — Multimarket" },
+      { name: "description", content: "Resumen del día: ventas, ganancia, top productos y alertas." },
+      { property: "og:title", content: "Dashboard — Multimarket" },
+      { property: "og:description", content: "Resumen del día: ventas, ganancia, top productos y alertas." },
+    ],
+  }),
+  component: Dashboard,
 });
 
-// IMPORTANT: Replace this placeholder. See ./README.md for routing conventions.
-function Index() {
+function startOfDay(d = new Date()) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
+function startOfWeek(d = new Date()) { const x = startOfDay(d); x.setDate(x.getDate() - x.getDay()); return x; }
+function startOfMonth(d = new Date()) { const x = startOfDay(d); x.setDate(1); return x; }
+
+function Dashboard() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["dashboard"],
+    queryFn: async () => {
+      const monthStart = startOfMonth().toISOString();
+      const [salesRes, itemsRes, prodRes, custRes, overdueRes] = await Promise.all([
+        supabase.from("sales").select("*").gte("sale_date", monthStart).order("sale_date", { ascending: false }),
+        supabase.from("sale_items").select("product_name, quantity, subtotal, unit_cost, sales!inner(sale_date)").gte("sales.sale_date", monthStart),
+        supabase.from("products").select("*").eq("active", true),
+        supabase.from("customers").select("id"),
+        supabase.from("sales").select("*").eq("status", "credit"),
+      ]);
+      return {
+        sales: salesRes.data ?? [],
+        items: itemsRes.data ?? [],
+        products: prodRes.data ?? [],
+        customerCount: custRes.data?.length ?? 0,
+        creditSales: overdueRes.data ?? [],
+      };
+    },
+  });
+
+  if (isLoading || !data) {
+    return <div className="p-6 text-muted-foreground">Cargando…</div>;
+  }
+
+  const today = startOfDay().toISOString();
+  const week = startOfWeek().toISOString();
+  const dayTotal = data.sales.filter((s) => s.sale_date >= today).reduce((s, r) => s + Number(r.total), 0);
+  const weekTotal = data.sales.filter((s) => s.sale_date >= week).reduce((s, r) => s + Number(r.total), 0);
+  const monthTotal = data.sales.reduce((s, r) => s + Number(r.total), 0);
+  const monthProfit = data.sales.reduce((s, r) => s + (Number(r.total) - Number(r.cost_total)), 0);
+
+  const productAgg = new Map<string, { qty: number; total: number }>();
+  for (const it of data.items) {
+    const cur = productAgg.get(it.product_name) ?? { qty: 0, total: 0 };
+    cur.qty += Number(it.quantity);
+    cur.total += Number(it.subtotal);
+    productAgg.set(it.product_name, cur);
+  }
+  const top = Array.from(productAgg.entries())
+    .sort((a, b) => b[1].total - a[1].total)
+    .slice(0, 10);
+
+  const lowStock = data.products.filter((p) => Number(p.stock) <= Number(p.low_stock_threshold));
+  const openReceivables = data.creditSales.reduce((s, r) => s + (Number(r.total) - Number(r.amount_paid)), 0);
+
   return (
-    <div
-      className="flex min-h-screen items-center justify-center"
-      style={{ backgroundColor: "#fcfbf8" }}
-    >
-      <img
-        data-lovable-blank-page-placeholder="REMOVE_THIS"
-        src="https://cdn.gpteng.co/blank-app-v1.svg"
-        alt="Your app will live here!"
-      />
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Dashboard</h1>
+        <p className="text-sm text-muted-foreground">Resumen del negocio hoy, esta semana y este mes.</p>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Stat title="Ventas hoy" value={money(dayTotal)} icon={DollarSign} accent="primary" />
+        <Stat title="Ventas semana" value={money(weekTotal)} icon={TrendingUp} accent="chart-2" />
+        <Stat title="Ventas mes" value={money(monthTotal)} icon={ShoppingBag} accent="chart-3" />
+        <Stat title="Ganancia mes" value={money(monthProfit)} icon={TrendingUp} accent="success" />
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader><CardTitle>Top 10 productos (este mes)</CardTitle></CardHeader>
+          <CardContent>
+            {top.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Aún no hay ventas este mes.</p>
+            ) : (
+              <div className="space-y-2">
+                {top.map(([name, v], i) => {
+                  const max = top[0][1].total;
+                  return (
+                    <div key={name} className="grid grid-cols-[24px_1fr_auto] items-center gap-3 text-sm">
+                      <span className="text-muted-foreground tabular-nums">{i + 1}</span>
+                      <div>
+                        <div className="font-medium truncate">{name}</div>
+                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full bg-primary" style={{ width: `${(v.total / max) * 100}%` }} />
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-medium tabular-nums">{money(v.total)}</div>
+                        <div className="text-xs text-muted-foreground">{v.qty} und</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <div className="space-y-4">
+          <Card>
+            <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+              <AlertCircle className="h-4 w-4 text-warning" />
+              <CardTitle className="text-base">Stock bajo</CardTitle>
+              <Badge variant="secondary" className="ml-auto">{lowStock.length}</Badge>
+            </CardHeader>
+            <CardContent>
+              {lowStock.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Todo el inventario está en niveles seguros.</p>
+              ) : (
+                <ul className="space-y-1 text-sm">
+                  {lowStock.slice(0, 6).map((p) => (
+                    <li key={p.id} className="flex justify-between">
+                      <span className="truncate">{p.name}</span>
+                      <span className="text-warning font-medium tabular-nums">{Number(p.stock)}</span>
+                    </li>
+                  ))}
+                  {lowStock.length > 6 && (
+                    <li><Link to="/inventory" className="text-primary text-xs">Ver todos →</Link></li>
+                  )}
+                </ul>
+              )}
+            </CardContent>
+          </Card>
+          <Card>
+            <CardHeader className="flex flex-row items-center gap-2 space-y-0">
+              <AlertCircle className="h-4 w-4 text-destructive" />
+              <CardTitle className="text-base">Por cobrar</CardTitle>
+              <Badge variant="secondary" className="ml-auto">{data.creditSales.length}</Badge>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-semibold tabular-nums">{money(openReceivables)}</div>
+              <p className="text-xs text-muted-foreground mt-1">Saldo pendiente de clientes.</p>
+              <Link to="/receivables" className="text-primary text-xs mt-2 inline-block">Ver detalle →</Link>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+
+      <Card>
+        <CardHeader><CardTitle>Últimas ventas</CardTitle></CardHeader>
+        <CardContent>
+          {data.sales.length === 0 ? (
+            <p className="text-sm text-muted-foreground">Sin ventas registradas.</p>
+          ) : (
+            <div className="divide-y">
+              {data.sales.slice(0, 8).map((s) => (
+                <div key={s.id} className="flex items-center justify-between py-2 text-sm">
+                  <div>
+                    <div className="font-medium">{s.customer_name || "Venta de mostrador"}</div>
+                    <div className="text-xs text-muted-foreground">{formatDate(s.sale_date)}</div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Badge variant={s.status === "paid" ? "default" : "secondary"}>
+                      {s.status === "paid" ? "Pagado" : "Fiado"}
+                    </Badge>
+                    <span className="font-medium tabular-nums">{money(Number(s.total))}</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
+  );
+}
+
+function Stat({ title, value, icon: Icon, accent }: { title: string; value: string; icon: any; accent: string }) {
+  return (
+    <Card>
+      <CardContent className="pt-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-xs uppercase tracking-wide text-muted-foreground">{title}</div>
+            <div className="text-2xl font-semibold tabular-nums mt-1">{value}</div>
+          </div>
+          <div className={`h-10 w-10 rounded-lg flex items-center justify-center bg-${accent}/10 text-${accent}`}>
+            <Icon className="h-5 w-5" />
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
