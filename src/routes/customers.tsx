@@ -1,18 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, apiPost, apiPut } from "@/lib/api";
+import type { Customer, Sale } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, SortableHead } from "@/components/ui/table";
 import { Plus, Pencil, Eye } from "lucide-react";
 import { money, formatDate } from "@/lib/format";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { useTableSort } from "@/lib/sort";
 
 export const Route = createFileRoute("/customers")({
   head: () => ({
@@ -32,37 +34,26 @@ function Customers() {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<CustomerForm | null>(null);
-  const [viewing, setViewing] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<Customer | null>(null);
 
   const { data: customers = [] } = useQuery({
     queryKey: ["customers-full"],
-    queryFn: async () => {
-      const [cs, ss] = await Promise.all([
-        supabase.from("customers").select("*").order("name"),
-        supabase.from("sales").select("customer_id,total,amount_paid,status"),
-      ]);
-      const agg = new Map<string, { total: number; owed: number; count: number }>();
-      for (const s of ss.data ?? []) {
-        if (!s.customer_id) continue;
-        const cur = agg.get(s.customer_id) ?? { total: 0, owed: 0, count: 0 };
-        cur.total += Number(s.total); cur.count += 1;
-        cur.owed += Number(s.total) - Number(s.amount_paid);
-        agg.set(s.customer_id, cur);
-      }
-      return (cs.data ?? []).map((c) => ({ ...c, agg: agg.get(c.id) ?? { total: 0, owed: 0, count: 0 } }));
-    },
+    queryFn: () => apiGet<Customer[]>("/api/customers"),
   });
-  const filtered = customers.filter((c) => c.name.toLowerCase().includes(q.toLowerCase()));
+  const filtered = customers.filter((c) => {
+    const needle = q.toLowerCase();
+    return c.name.toLowerCase().includes(needle) || (c.phone ?? "").toLowerCase().includes(needle);
+  });
+  const { sorted, sortKey, sortOrder, handleSort } = useTableSort(filtered, "name", "asc");
 
   const save = useMutation({
     mutationFn: async (f: CustomerForm) => {
       if (!f.name.trim()) throw new Error("Nombre requerido.");
+      const body = { name: f.name, phone: f.phone || null, notes: f.notes || null };
       if (f.id) {
-        const { error } = await supabase.from("customers").update({ name: f.name, phone: f.phone || null, notes: f.notes || null }).eq("id", f.id);
-        if (error) throw error;
+        await apiPut(`/api/customers/${f.id}`, body);
       } else {
-        const { error } = await supabase.from("customers").insert({ name: f.name, phone: f.phone || null, notes: f.notes || null });
-        if (error) throw error;
+        await apiPost("/api/customers", body);
       }
     },
     onSuccess: () => { toast.success("Guardado"); setEditing(null); qc.invalidateQueries(); },
@@ -76,9 +67,9 @@ function Customers() {
           <h1 className="text-2xl font-semibold tracking-tight">Clientes</h1>
           <p className="text-sm text-muted-foreground">{customers.length} clientes registrados.</p>
         </div>
-        <div className="flex gap-2">
-          <Input placeholder="Buscar…" value={q} onChange={(e) => setQ(e.target.value)} className="w-56" />
-          <Button onClick={() => setEditing({ name: "", phone: "", notes: "" })}><Plus className="h-4 w-4 mr-1" /> Nuevo</Button>
+        <div className="flex flex-col gap-2 w-full sm:flex-row sm:w-auto">
+          <Input placeholder="Buscar por nombre o teléfono…" value={q} onChange={(e) => setQ(e.target.value)} className="w-full sm:w-56" />
+          <Button className="w-full sm:w-auto" onClick={() => setEditing({ name: "", phone: "", notes: "" })}><Plus className="h-4 w-4 mr-1" /> Nuevo</Button>
         </div>
       </div>
 
@@ -86,23 +77,24 @@ function Customers() {
         <CardContent className="p-0 overflow-x-auto">
           <Table>
             <TableHeader><TableRow>
-              <TableHead>Nombre</TableHead><TableHead>Teléfono</TableHead>
-              <TableHead className="text-right">Compras</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead className="text-right">Debe</TableHead>
-              <TableHead className="w-24"></TableHead>
+              <SortableHead sortKey="name" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort}>Nombre</SortableHead>
+              <SortableHead sortKey="phone" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} className="hidden sm:table-cell">Teléfono</SortableHead>
+              <SortableHead sortKey="agg.count" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right" className="hidden md:table-cell">Compras</SortableHead>
+              <SortableHead sortKey="agg.total" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right" className="hidden sm:table-cell">Total</SortableHead>
+              <SortableHead sortKey="agg.owed" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right">Debe</SortableHead>
+              <TableHead className="w-16 sm:w-24"></TableHead>
             </TableRow></TableHeader>
             <TableBody>
-              {filtered.map((c) => (
+              {sorted.map((c) => (
                 <TableRow key={c.id}>
                   <TableCell className="font-medium">{c.name}</TableCell>
-                  <TableCell className="text-muted-foreground">{c.phone || "—"}</TableCell>
-                  <TableCell className="text-right tabular-nums">{c.agg.count}</TableCell>
-                  <TableCell className="text-right tabular-nums">{money(c.agg.total)}</TableCell>
+                  <TableCell className="hidden sm:table-cell text-muted-foreground">{c.phone || "—"}</TableCell>
+                  <TableCell className="hidden md:table-cell text-right tabular-nums">{c.agg.count}</TableCell>
+                  <TableCell className="hidden sm:table-cell text-right tabular-nums">{money(c.agg.total)}</TableCell>
                   <TableCell className="text-right tabular-nums">{c.agg.owed > 0 ? <Badge variant="destructive">{money(c.agg.owed)}</Badge> : money(0)}</TableCell>
                   <TableCell>
                     <div className="flex gap-1">
-                      <Button variant="ghost" size="icon" onClick={() => setViewing(c.id)}><Eye className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" onClick={() => setViewing(c)}><Eye className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" onClick={() => setEditing({ id: c.id, name: c.name, phone: c.phone ?? "", notes: c.notes ?? "" })}><Pencil className="h-4 w-4" /></Button>
                     </div>
                   </TableCell>
@@ -131,34 +123,34 @@ function Customers() {
         </DialogContent>
       </Dialog>
 
-      <CustomerHistoryDialog id={viewing} onClose={() => setViewing(null)} />
+      <CustomerHistoryDialog customer={viewing} onClose={() => setViewing(null)} />
     </div>
   );
 }
 
-function CustomerHistoryDialog({ id, onClose }: { id: string | null; onClose: () => void }) {
-  const { data } = useQuery({
-    queryKey: ["customer-hist", id],
-    queryFn: async () => {
-      if (!id) return null;
-      const [c, s] = await Promise.all([
-        supabase.from("customers").select("*").eq("id", id).single(),
-        supabase.from("sales").select("*").eq("customer_id", id).order("sale_date", { ascending: false }),
-      ]);
-      return { customer: c.data, sales: s.data ?? [] };
-    },
-    enabled: !!id,
+function CustomerHistoryDialog({ customer, onClose }: { customer: Customer | null; onClose: () => void }) {
+  const { data: sales = [] } = useQuery({
+    queryKey: ["customer-hist", customer?.id],
+    queryFn: () => apiGet<Sale[]>(`/api/customers/${customer!.id}/sales`),
+    enabled: !!customer,
   });
+  const { sorted, sortKey, sortOrder, handleSort } = useTableSort(sales, "sale_date", "desc");
+
   return (
-    <Dialog open={!!id} onOpenChange={(o) => !o && onClose()}>
+    <Dialog open={!!customer} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-2xl">
-        <DialogHeader><DialogTitle>{data?.customer?.name}</DialogTitle></DialogHeader>
-        {data?.customer?.notes && <p className="text-sm text-muted-foreground">{data.customer.notes}</p>}
-        <div className="max-h-96 overflow-auto">
+        <DialogHeader><DialogTitle>{customer?.name}</DialogTitle></DialogHeader>
+        {customer?.notes && <p className="text-sm text-muted-foreground">{customer.notes}</p>}
+        <div className="max-h-[60vh] overflow-auto">
           <Table>
-            <TableHeader><TableRow><TableHead>Fecha</TableHead><TableHead>Estado</TableHead><TableHead className="text-right">Total</TableHead><TableHead className="text-right">Pagado</TableHead></TableRow></TableHeader>
+            <TableHeader><TableRow>
+              <SortableHead sortKey="sale_date" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort}>Fecha</SortableHead>
+              <SortableHead sortKey="status" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort}>Estado</SortableHead>
+              <SortableHead sortKey="total" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right">Total</SortableHead>
+              <SortableHead sortKey="amount_paid" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right">Pagado</SortableHead>
+            </TableRow></TableHeader>
             <TableBody>
-              {(data?.sales ?? []).map((s) => (
+              {sorted.map((s) => (
                 <TableRow key={s.id}>
                   <TableCell className="text-xs">{formatDate(s.sale_date)}</TableCell>
                   <TableCell><Badge variant={s.status === "paid" ? "default" : "secondary"}>{s.status === "paid" ? "Pagado" : "Fiado"}</Badge></TableCell>
@@ -166,7 +158,7 @@ function CustomerHistoryDialog({ id, onClose }: { id: string | null; onClose: ()
                   <TableCell className="text-right tabular-nums">{money(Number(s.amount_paid))}</TableCell>
                 </TableRow>
               ))}
-              {(data?.sales?.length ?? 0) === 0 && <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-4">Sin compras.</TableCell></TableRow>}
+              {sales.length === 0 && <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-4">Sin compras.</TableCell></TableRow>}
             </TableBody>
           </Table>
         </div>

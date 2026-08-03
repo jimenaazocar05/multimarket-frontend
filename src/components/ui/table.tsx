@@ -1,4 +1,5 @@
 import * as React from "react";
+import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
@@ -91,4 +92,49 @@ const TableCaption = React.forwardRef<
 ));
 TableCaption.displayName = "TableCaption";
 
-export { Table, TableHeader, TableBody, TableFooter, TableHead, TableRow, TableCell, TableCaption };
+export interface SortableHeadProps extends React.ThHTMLAttributes<HTMLTableCellElement> {
+  sortKey: string;
+  currentSort?: string;
+  currentOrder?: "asc" | "desc";
+  onSort?: (key: string) => void;
+  align?: "left" | "right" | "center";
+}
+
+const SortableHead = React.forwardRef<HTMLTableCellElement, SortableHeadProps>(
+  ({ className, children, sortKey, currentSort, currentOrder, onSort, align = "left", ...props }, ref) => {
+    const isSorted = currentSort === sortKey;
+    const Icon = isSorted ? (currentOrder === "asc" ? ArrowUp : ArrowDown) : ArrowUpDown;
+
+    return (
+      <TableHead
+        ref={ref}
+        className={cn(
+          "cursor-pointer select-none hover:text-foreground transition-colors group",
+          className
+        )}
+        onClick={() => onSort?.(sortKey)}
+        {...props}
+      >
+        <div
+          className={cn(
+            "flex items-center gap-1.5",
+            align === "right" ? "justify-end" : align === "center" ? "justify-center" : "justify-start"
+          )}
+        >
+          <span>{children}</span>
+          <Icon
+            className={cn(
+              "h-3.5 w-3.5 shrink-0 transition-all",
+              isSorted
+                ? "text-foreground font-semibold"
+                : "text-muted-foreground/40 group-hover:text-muted-foreground"
+            )}
+          />
+        </div>
+      </TableHead>
+    );
+  }
+);
+SortableHead.displayName = "SortableHead";
+
+export { Table, TableHeader, TableBody, TableFooter, TableHead, TableRow, TableCell, TableCaption, SortableHead };

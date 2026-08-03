@@ -1,7 +1,8 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet } from "@/lib/api";
+import type { Dashboard as DashboardData, Sale, Receivable } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { money, formatDate } from "@/lib/format";
@@ -19,29 +20,16 @@ export const Route = createFileRoute("/")({
   component: Dashboard,
 });
 
-function startOfDay(d = new Date()) { const x = new Date(d); x.setHours(0,0,0,0); return x; }
-function startOfWeek(d = new Date()) { const x = startOfDay(d); x.setDate(x.getDate() - x.getDay()); return x; }
-function startOfMonth(d = new Date()) { const x = startOfDay(d); x.setDate(1); return x; }
-
 function Dashboard() {
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard"],
     queryFn: async () => {
-      const monthStart = startOfMonth().toISOString();
-      const [salesRes, itemsRes, prodRes, custRes, overdueRes] = await Promise.all([
-        supabase.from("sales").select("*").gte("sale_date", monthStart).order("sale_date", { ascending: false }),
-        supabase.from("sale_items").select("product_name, quantity, subtotal, unit_cost, sales!inner(sale_date)").gte("sales.sale_date", monthStart),
-        supabase.from("products").select("*").eq("active", true),
-        supabase.from("customers").select("id"),
-        supabase.from("sales").select("*").eq("status", "credit"),
+      const [dashboard, recentSales, receivables] = await Promise.all([
+        apiGet<DashboardData>("/api/dashboard"),
+        apiGet<Sale[]>("/api/sales"),
+        apiGet<Receivable[]>("/api/receivables"),
       ]);
-      return {
-        sales: salesRes.data ?? [],
-        items: itemsRes.data ?? [],
-        products: prodRes.data ?? [],
-        customerCount: custRes.data?.length ?? 0,
-        creditSales: overdueRes.data ?? [],
-      };
+      return { dashboard, recentSales, receivables };
     },
   });
 
@@ -49,26 +37,9 @@ function Dashboard() {
     return <div className="p-6 text-muted-foreground">Cargando…</div>;
   }
 
-  const today = startOfDay().toISOString();
-  const week = startOfWeek().toISOString();
-  const dayTotal = data.sales.filter((s) => s.sale_date >= today).reduce((s, r) => s + Number(r.total), 0);
-  const weekTotal = data.sales.filter((s) => s.sale_date >= week).reduce((s, r) => s + Number(r.total), 0);
-  const monthTotal = data.sales.reduce((s, r) => s + Number(r.total), 0);
-  const monthProfit = data.sales.reduce((s, r) => s + (Number(r.total) - Number(r.cost_total)), 0);
-
-  const productAgg = new Map<string, { qty: number; total: number }>();
-  for (const it of data.items) {
-    const cur = productAgg.get(it.product_name) ?? { qty: 0, total: 0 };
-    cur.qty += Number(it.quantity);
-    cur.total += Number(it.subtotal);
-    productAgg.set(it.product_name, cur);
-  }
-  const top = Array.from(productAgg.entries())
-    .sort((a, b) => b[1].total - a[1].total)
-    .slice(0, 10);
-
-  const lowStock = data.products.filter((p) => Number(p.stock) <= Number(p.low_stock_threshold));
-  const openReceivables = data.creditSales.reduce((s, r) => s + (Number(r.total) - Number(r.amount_paid)), 0);
+  const { dashboard, recentSales, receivables } = data;
+  const top = dashboard.top_products;
+  const lowStock = dashboard.low_stock;
 
   return (
     <div className="space-y-6">
@@ -78,10 +49,10 @@ function Dashboard() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Stat title="Ventas hoy" value={money(dayTotal)} icon={DollarSign} accent="primary" />
-        <Stat title="Ventas semana" value={money(weekTotal)} icon={TrendingUp} accent="chart-2" />
-        <Stat title="Ventas mes" value={money(monthTotal)} icon={ShoppingBag} accent="chart-3" />
-        <Stat title="Ganancia mes" value={money(monthProfit)} icon={TrendingUp} accent="success" />
+        <Stat title="Ventas hoy" value={money(dashboard.day_total)} icon={DollarSign} accent="primary" />
+        <Stat title="Ventas semana" value={money(dashboard.week_total)} icon={TrendingUp} accent="chart-2" />
+        <Stat title="Ventas mes" value={money(dashboard.month_total)} icon={ShoppingBag} accent="chart-3" />
+        <Stat title="Ganancia mes" value={money(dashboard.month_profit)} icon={TrendingUp} accent="success" />
       </div>
 
       <div className="grid gap-4 lg:grid-cols-3">
@@ -92,20 +63,20 @@ function Dashboard() {
               <p className="text-sm text-muted-foreground">Aún no hay ventas este mes.</p>
             ) : (
               <div className="space-y-2">
-                {top.map(([name, v], i) => {
-                  const max = top[0][1].total;
+                {top.map((p, i) => {
+                  const max = top[0].revenue;
                   return (
-                    <div key={name} className="grid grid-cols-[24px_1fr_auto] items-center gap-3 text-sm">
+                    <div key={p.product_id ?? p.product_name} className="grid grid-cols-[24px_1fr_auto] items-center gap-3 text-sm">
                       <span className="text-muted-foreground tabular-nums">{i + 1}</span>
                       <div>
-                        <div className="font-medium truncate">{name}</div>
+                        <div className="font-medium truncate">{p.product_name}</div>
                         <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                          <div className="h-full bg-primary" style={{ width: `${(v.total / max) * 100}%` }} />
+                          <div className="h-full bg-primary" style={{ width: `${(p.revenue / max) * 100}%` }} />
                         </div>
                       </div>
                       <div className="text-right">
-                        <div className="font-medium tabular-nums">{money(v.total)}</div>
-                        <div className="text-xs text-muted-foreground">{v.qty} und</div>
+                        <div className="font-medium tabular-nums">{money(p.revenue)}</div>
+                        <div className="text-xs text-muted-foreground">{p.quantity} und</div>
                       </div>
                     </div>
                   );
@@ -130,7 +101,7 @@ function Dashboard() {
                   {lowStock.slice(0, 6).map((p) => (
                     <li key={p.id} className="flex justify-between">
                       <span className="truncate">{p.name}</span>
-                      <span className="text-warning font-medium tabular-nums">{Number(p.stock)}</span>
+                      <span className="text-warning font-medium tabular-nums">{p.stock}</span>
                     </li>
                   ))}
                   {lowStock.length > 6 && (
@@ -144,10 +115,10 @@ function Dashboard() {
             <CardHeader className="flex flex-row items-center gap-2 space-y-0">
               <AlertCircle className="h-4 w-4 text-destructive" />
               <CardTitle className="text-base">Por cobrar</CardTitle>
-              <Badge variant="secondary" className="ml-auto">{data.creditSales.length}</Badge>
+              <Badge variant="secondary" className="ml-auto">{receivables.length}</Badge>
             </CardHeader>
             <CardContent>
-              <div className="text-2xl font-semibold tabular-nums">{money(openReceivables)}</div>
+              <div className="text-2xl font-semibold tabular-nums">{money(dashboard.open_receivables)}</div>
               <p className="text-xs text-muted-foreground mt-1">Saldo pendiente de clientes.</p>
               <Link to="/receivables" className="text-primary text-xs mt-2 inline-block">Ver detalle →</Link>
             </CardContent>
@@ -158,11 +129,11 @@ function Dashboard() {
       <Card>
         <CardHeader><CardTitle>Últimas ventas</CardTitle></CardHeader>
         <CardContent>
-          {data.sales.length === 0 ? (
+          {recentSales.length === 0 ? (
             <p className="text-sm text-muted-foreground">Sin ventas registradas.</p>
           ) : (
             <div className="divide-y">
-              {data.sales.slice(0, 8).map((s) => (
+              {recentSales.slice(0, 8).map((s) => (
                 <div key={s.id} className="flex items-center justify-between py-2 text-sm">
                   <div>
                     <div className="font-medium">{s.customer_name || "Venta de mostrador"}</div>

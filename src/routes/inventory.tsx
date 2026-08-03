@@ -1,18 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, apiPost, apiPut } from "@/lib/api";
+import type { InventoryMovement } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, SortableHead } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Pencil, Plus, PackagePlus, History } from "lucide-react";
 import { money, formatDateTime } from "@/lib/format";
 import { adjustStock, type Product } from "@/lib/data";
+import { useTableSort } from "@/lib/sort";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/inventory")({
@@ -28,7 +30,7 @@ export const Route = createFileRoute("/inventory")({
 });
 
 const empty: Partial<Product> = {
-  code: "", name: "", cost: 0, price: 0, stock: 0, low_stock_threshold: 5, unit: "unidad", active: true, notes: "",
+  name: "", cost: 0, price: 0, stock: 0, low_stock_threshold: 5, unit: "unidad", active: true, notes: "",
 };
 
 function Inventory() {
@@ -40,33 +42,32 @@ function Inventory() {
 
   const { data: products = [] } = useQuery({
     queryKey: ["products"],
-    queryFn: async () => (await supabase.from("products").select("*").order("name")).data ?? [],
+    queryFn: () => apiGet<Product[]>("/api/products"),
   });
 
-  const filtered = products.filter(
-    (p) => p.name.toLowerCase().includes(q.toLowerCase()) || (p.code ?? "").toLowerCase().includes(q.toLowerCase()),
+  const filtered = products.filter((p) => p.name.toLowerCase().includes(q.toLowerCase()));
+  const { sorted, sortKey, sortOrder, handleSort } = useTableSort(
+    filtered,
+    "name",
+    "asc",
+    (p, key) => (key === "margin" ? Number(p.price) - Number(p.cost) : undefined)
   );
+
+  const totalCostValue = products.reduce((acc, p) => acc + Math.max(0, Number(p.stock)) * Number(p.cost), 0);
 
   const save = useMutation({
     mutationFn: async (p: Partial<Product>) => {
       if (!p.name?.trim()) throw new Error("El nombre es obligatorio.");
       if (p.id) {
-        const { error } = await supabase.from("products").update({
-          code: p.code, name: p.name, cost: p.cost, price: p.price,
+        await apiPut(`/api/products/${p.id}`, {
+          name: p.name, cost: p.cost, price: p.price,
           low_stock_threshold: p.low_stock_threshold, unit: p.unit, active: p.active, notes: p.notes,
-        }).eq("id", p.id);
-        if (error) throw error;
+        });
       } else {
-        const { data, error } = await supabase.from("products").insert({
-          code: p.code, name: p.name!, cost: p.cost ?? 0, price: p.price ?? 0, stock: p.stock ?? 0,
+        await apiPost("/api/products", {
+          name: p.name!, cost: p.cost ?? 0, price: p.price ?? 0, stock: p.stock ?? 0,
           low_stock_threshold: p.low_stock_threshold ?? 5, unit: p.unit ?? "unidad", active: p.active ?? true, notes: p.notes,
-        }).select().single();
-        if (error) throw error;
-        if (data && Number(p.stock) > 0) {
-          await supabase.from("inventory_movements").insert({
-            product_id: data.id, movement_type: "initial", quantity_change: Number(p.stock), notes: "Stock inicial",
-          });
-        }
+        });
       }
     },
     onSuccess: () => { toast.success("Producto guardado"); setEditing(null); qc.invalidateQueries(); },
@@ -78,11 +79,13 @@ function Inventory() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Inventario</h1>
-          <p className="text-sm text-muted-foreground">{products.length} productos registrados.</p>
+          <p className="text-sm text-muted-foreground">
+            {products.length} productos registrados · Valor en costo: <strong className="text-foreground">{money(totalCostValue)}</strong>
+          </p>
         </div>
-        <div className="flex gap-2">
-          <Input placeholder="Buscar…" value={q} onChange={(e) => setQ(e.target.value)} className="w-56" />
-          <Button onClick={() => setEditing({ ...empty })}><Plus className="h-4 w-4 mr-1" /> Nuevo</Button>
+        <div className="flex flex-col gap-2 w-full sm:flex-row sm:w-auto">
+          <Input placeholder="Buscar…" value={q} onChange={(e) => setQ(e.target.value)} className="w-full sm:w-56" />
+          <Button className="w-full sm:w-auto" onClick={() => setEditing({ ...empty })}><Plus className="h-4 w-4 mr-1" /> Nuevo</Button>
         </div>
       </div>
 
@@ -91,23 +94,21 @@ function Inventory() {
           <Table>
             <TableHeader>
               <TableRow>
-                <TableHead>Código</TableHead>
-                <TableHead>Producto</TableHead>
-                <TableHead className="text-right">Stock</TableHead>
-                <TableHead className="text-right">Costo</TableHead>
-                <TableHead className="text-right">Precio</TableHead>
-                <TableHead className="text-right">Margen</TableHead>
+                <SortableHead sortKey="name" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort}>Producto</SortableHead>
+                <SortableHead sortKey="stock" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right">Stock</SortableHead>
+                <SortableHead sortKey="cost" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right" className="hidden sm:table-cell">Costo</SortableHead>
+                <SortableHead sortKey="price" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right" className="hidden sm:table-cell">Precio</SortableHead>
+                <SortableHead sortKey="margin" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right" className="hidden md:table-cell">Margen</SortableHead>
                 <TableHead className="w-24"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((p) => {
+              {sorted.map((p) => {
                 const margin = Number(p.price) - Number(p.cost);
                 const marginPct = Number(p.cost) > 0 ? (margin / Number(p.cost)) * 100 : 0;
                 const low = Number(p.stock) <= Number(p.low_stock_threshold);
                 return (
                   <TableRow key={p.id}>
-                    <TableCell className="font-mono text-xs">{p.code || "—"}</TableCell>
                     <TableCell>
                       <div className="font-medium">{p.name}</div>
                       <div className="text-xs text-muted-foreground">{p.unit}</div>
@@ -115,9 +116,9 @@ function Inventory() {
                     <TableCell className="text-right tabular-nums">
                       {low ? <Badge variant="destructive">{Number(p.stock)}</Badge> : Number(p.stock)}
                     </TableCell>
-                    <TableCell className="text-right tabular-nums">{money(Number(p.cost))}</TableCell>
-                    <TableCell className="text-right tabular-nums">{money(Number(p.price))}</TableCell>
-                    <TableCell className="text-right tabular-nums text-muted-foreground">
+                    <TableCell className="hidden sm:table-cell text-right tabular-nums">{money(Number(p.cost))}</TableCell>
+                    <TableCell className="hidden sm:table-cell text-right tabular-nums">{money(Number(p.price))}</TableCell>
+                    <TableCell className="hidden md:table-cell text-right tabular-nums text-muted-foreground">
                       {money(margin)} <span className="text-xs">({marginPct.toFixed(0)}%)</span>
                     </TableCell>
                     <TableCell>
@@ -131,7 +132,7 @@ function Inventory() {
                 );
               })}
               {filtered.length === 0 && (
-                <TableRow><TableCell colSpan={7} className="text-center text-muted-foreground py-8">Sin productos.</TableCell></TableRow>
+                <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-8">Sin productos.</TableCell></TableRow>
               )}
             </TableBody>
           </Table>
@@ -146,12 +147,9 @@ function Inventory() {
           </DialogHeader>
           {editing && (
             <div className="grid gap-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div><Label>Código</Label><Input value={editing.code ?? ""} onChange={(e) => setEditing({ ...editing, code: e.target.value })} /></div>
-                <div><Label>Unidad</Label><Input value={editing.unit ?? ""} onChange={(e) => setEditing({ ...editing, unit: e.target.value })} /></div>
-              </div>
               <div><Label>Nombre *</Label><Input value={editing.name ?? ""} onChange={(e) => setEditing({ ...editing, name: e.target.value })} /></div>
-              <div className="grid grid-cols-3 gap-2">
+              <div><Label>Unidad</Label><Input value={editing.unit ?? ""} onChange={(e) => setEditing({ ...editing, unit: e.target.value })} /></div>
+              <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
                 <div><Label>Costo</Label><Input type="number" step="0.01" value={editing.cost ?? 0} onChange={(e) => setEditing({ ...editing, cost: Number(e.target.value) })} /></div>
                 <div><Label>Precio</Label><Input type="number" step="0.01" value={editing.price ?? 0} onChange={(e) => setEditing({ ...editing, price: Number(e.target.value) })} /></div>
                 <div><Label>Umbral bajo</Label><Input type="number" step="1" value={editing.low_stock_threshold ?? 5} onChange={(e) => setEditing({ ...editing, low_stock_threshold: Number(e.target.value) })} /></div>
@@ -203,27 +201,42 @@ function AdjustDialog({ product, onClose, onDone }: { product: Product | null; o
   );
 }
 
+const MOVEMENT_TYPE_LABELS: Record<string, string> = {
+  sale: "Venta",
+  purchase: "Compra",
+  adjustment: "Ajuste",
+  initial: "Inicial",
+};
+
 function HistoryDialog({ product, onClose }: { product: Product | null; onClose: () => void }) {
   const { data = [] } = useQuery({
     queryKey: ["inv-mov", product?.id],
     queryFn: async () => {
       if (!product) return [];
-      return (await supabase.from("inventory_movements").select("*").eq("product_id", product.id).order("created_at", { ascending: false }).limit(50)).data ?? [];
+      return apiGet<InventoryMovement[]>(`/api/inventory/movements?product_id=${product.id}`);
     },
     enabled: !!product,
   });
+  const { sorted, sortKey, sortOrder, handleSort } = useTableSort(data, "created_at", "desc");
   return (
     <Dialog open={!!product} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-2xl">
         <DialogHeader><DialogTitle>Historial — {product?.name}</DialogTitle></DialogHeader>
-        <div className="max-h-96 overflow-auto">
+        <div className="max-h-[60vh] overflow-auto">
           <Table>
-            <TableHeader><TableRow><TableHead>Fecha</TableHead><TableHead>Tipo</TableHead><TableHead className="text-right">Cambio</TableHead><TableHead>Nota</TableHead></TableRow></TableHeader>
+            <TableHeader>
+              <TableRow>
+                <SortableHead sortKey="created_at" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort}>Fecha</SortableHead>
+                <SortableHead sortKey="movement_type" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort}>Tipo</SortableHead>
+                <SortableHead sortKey="quantity_change" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right">Cambio</SortableHead>
+                <SortableHead sortKey="notes" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort}>Nota</SortableHead>
+              </TableRow>
+            </TableHeader>
             <TableBody>
-              {data.map((m) => (
+              {sorted.map((m) => (
                 <TableRow key={m.id}>
                   <TableCell className="text-xs">{formatDateTime(m.created_at)}</TableCell>
-                  <TableCell><Badge variant="outline">{m.movement_type}</Badge></TableCell>
+                  <TableCell><Badge variant="outline">{MOVEMENT_TYPE_LABELS[m.movement_type?.toLowerCase()] || m.movement_type}</Badge></TableCell>
                   <TableCell className={`text-right tabular-nums ${Number(m.quantity_change) < 0 ? "text-destructive" : "text-success"}`}>
                     {Number(m.quantity_change) > 0 ? "+" : ""}{Number(m.quantity_change)}
                   </TableCell>

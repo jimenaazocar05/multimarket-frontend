@@ -8,6 +8,11 @@ export const money = (n: number | null | undefined) => {
   });
 };
 
+export const bolivares = (n: number | null | undefined) => {
+  const v = Number(n ?? 0);
+  return "Bs. " + v.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+};
+
 export const num = (n: number | null | undefined, d = 2) => {
   const v = Number(n ?? 0);
   return v.toLocaleString("en-US", { minimumFractionDigits: d, maximumFractionDigits: d });

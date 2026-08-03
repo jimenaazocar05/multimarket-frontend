@@ -9,43 +9,19 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as SuppliersRouteImport } from './routes/suppliers'
-import { Route as ReportsRouteImport } from './routes/reports'
-import { Route as ReceivablesRouteImport } from './routes/receivables'
-import { Route as PosRouteImport } from './routes/pos'
-import { Route as PayablesRouteImport } from './routes/payables'
-import { Route as InventoryRouteImport } from './routes/inventory'
-import { Route as CustomersRouteImport } from './routes/customers'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as CustomersRouteImport } from './routes/customers'
+import { Route as InventoryRouteImport } from './routes/inventory'
+import { Route as PayablesRouteImport } from './routes/payables'
+import { Route as PosRouteImport } from './routes/pos'
+import { Route as PurchasesRouteImport } from './routes/purchases'
+import { Route as ReceivablesRouteImport } from './routes/receivables'
+import { Route as ReportsRouteImport } from './routes/reports'
+import { Route as SuppliersRouteImport } from './routes/suppliers'
 
-const SuppliersRoute = SuppliersRouteImport.update({
-  id: '/suppliers',
-  path: '/suppliers',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ReportsRoute = ReportsRouteImport.update({
-  id: '/reports',
-  path: '/reports',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ReceivablesRoute = ReceivablesRouteImport.update({
-  id: '/receivables',
-  path: '/receivables',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PosRoute = PosRouteImport.update({
-  id: '/pos',
-  path: '/pos',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PayablesRoute = PayablesRouteImport.update({
-  id: '/payables',
-  path: '/payables',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InventoryRoute = InventoryRouteImport.update({
-  id: '/inventory',
-  path: '/inventory',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const CustomersRoute = CustomersRouteImport.update({
@@ -53,9 +29,39 @@ const CustomersRoute = CustomersRouteImport.update({
   path: '/customers',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const InventoryRoute = InventoryRouteImport.update({
+  id: '/inventory',
+  path: '/inventory',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PayablesRoute = PayablesRouteImport.update({
+  id: '/payables',
+  path: '/payables',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PosRoute = PosRouteImport.update({
+  id: '/pos',
+  path: '/pos',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PurchasesRoute = PurchasesRouteImport.update({
+  id: '/purchases',
+  path: '/purchases',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReceivablesRoute = ReceivablesRouteImport.update({
+  id: '/receivables',
+  path: '/receivables',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportsRoute = ReportsRouteImport.update({
+  id: '/reports',
+  path: '/reports',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SuppliersRoute = SuppliersRouteImport.update({
+  id: '/suppliers',
+  path: '/suppliers',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -65,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/inventory': typeof InventoryRoute
   '/payables': typeof PayablesRoute
   '/pos': typeof PosRoute
+  '/purchases': typeof PurchasesRoute
   '/receivables': typeof ReceivablesRoute
   '/reports': typeof ReportsRoute
   '/suppliers': typeof SuppliersRoute
@@ -75,6 +82,7 @@ export interface FileRoutesByTo {
   '/inventory': typeof InventoryRoute
   '/payables': typeof PayablesRoute
   '/pos': typeof PosRoute
+  '/purchases': typeof PurchasesRoute
   '/receivables': typeof ReceivablesRoute
   '/reports': typeof ReportsRoute
   '/suppliers': typeof SuppliersRoute
@@ -86,6 +94,7 @@ export interface FileRoutesById {
   '/inventory': typeof InventoryRoute
   '/payables': typeof PayablesRoute
   '/pos': typeof PosRoute
+  '/purchases': typeof PurchasesRoute
   '/receivables': typeof ReceivablesRoute
   '/reports': typeof ReportsRoute
   '/suppliers': typeof SuppliersRoute
@@ -98,6 +107,7 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/payables'
     | '/pos'
+    | '/purchases'
     | '/receivables'
     | '/reports'
     | '/suppliers'
@@ -108,6 +118,7 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/payables'
     | '/pos'
+    | '/purchases'
     | '/receivables'
     | '/reports'
     | '/suppliers'
@@ -118,6 +129,7 @@ export interface FileRouteTypes {
     | '/inventory'
     | '/payables'
     | '/pos'
+    | '/purchases'
     | '/receivables'
     | '/reports'
     | '/suppliers'
@@ -129,6 +141,7 @@ export interface RootRouteChildren {
   InventoryRoute: typeof InventoryRoute
   PayablesRoute: typeof PayablesRoute
   PosRoute: typeof PosRoute
+  PurchasesRoute: typeof PurchasesRoute
   ReceivablesRoute: typeof ReceivablesRoute
   ReportsRoute: typeof ReportsRoute
   SuppliersRoute: typeof SuppliersRoute
@@ -136,46 +149,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/suppliers': {
-      id: '/suppliers'
-      path: '/suppliers'
-      fullPath: '/suppliers'
-      preLoaderRoute: typeof SuppliersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/reports': {
-      id: '/reports'
-      path: '/reports'
-      fullPath: '/reports'
-      preLoaderRoute: typeof ReportsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/receivables': {
-      id: '/receivables'
-      path: '/receivables'
-      fullPath: '/receivables'
-      preLoaderRoute: typeof ReceivablesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/pos': {
-      id: '/pos'
-      path: '/pos'
-      fullPath: '/pos'
-      preLoaderRoute: typeof PosRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/payables': {
-      id: '/payables'
-      path: '/payables'
-      fullPath: '/payables'
-      preLoaderRoute: typeof PayablesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/inventory': {
-      id: '/inventory'
-      path: '/inventory'
-      fullPath: '/inventory'
-      preLoaderRoute: typeof InventoryRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/customers': {
@@ -185,11 +163,53 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CustomersRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/inventory': {
+      id: '/inventory'
+      path: '/inventory'
+      fullPath: '/inventory'
+      preLoaderRoute: typeof InventoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/payables': {
+      id: '/payables'
+      path: '/payables'
+      fullPath: '/payables'
+      preLoaderRoute: typeof PayablesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/pos': {
+      id: '/pos'
+      path: '/pos'
+      fullPath: '/pos'
+      preLoaderRoute: typeof PosRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/purchases': {
+      id: '/purchases'
+      path: '/purchases'
+      fullPath: '/purchases'
+      preLoaderRoute: typeof PurchasesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/receivables': {
+      id: '/receivables'
+      path: '/receivables'
+      fullPath: '/receivables'
+      preLoaderRoute: typeof ReceivablesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reports': {
+      id: '/reports'
+      path: '/reports'
+      fullPath: '/reports'
+      preLoaderRoute: typeof ReportsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/suppliers': {
+      id: '/suppliers'
+      path: '/suppliers'
+      fullPath: '/suppliers'
+      preLoaderRoute: typeof SuppliersRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -201,6 +221,7 @@ const rootRouteChildren: RootRouteChildren = {
   InventoryRoute: InventoryRoute,
   PayablesRoute: PayablesRoute,
   PosRoute: PosRoute,
+  PurchasesRoute: PurchasesRoute,
   ReceivablesRoute: ReceivablesRoute,
   ReportsRoute: ReportsRoute,
   SuppliersRoute: SuppliersRoute,
@@ -208,3 +229,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}

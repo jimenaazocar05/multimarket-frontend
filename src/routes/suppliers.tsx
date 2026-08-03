@@ -1,18 +1,20 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet, apiPost, apiPut } from "@/lib/api";
+import type { Supplier } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, SortableHead } from "@/components/ui/table";
 import { Plus, Pencil } from "lucide-react";
 import { money } from "@/lib/format";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
+import { useTableSort } from "@/lib/sort";
 
 export const Route = createFileRoute("/suppliers")({
   head: () => ({
@@ -35,33 +37,22 @@ function Suppliers() {
 
   const { data: suppliers = [] } = useQuery({
     queryKey: ["suppliers-full"],
-    queryFn: async () => {
-      const [sp, py] = await Promise.all([
-        supabase.from("suppliers").select("*").order("name"),
-        supabase.from("payables").select("supplier_id,amount,amount_paid"),
-      ]);
-      const agg = new Map<string, { total: number; owed: number; count: number }>();
-      for (const p of py.data ?? []) {
-        if (!p.supplier_id) continue;
-        const cur = agg.get(p.supplier_id) ?? { total: 0, owed: 0, count: 0 };
-        cur.total += Number(p.amount); cur.count += 1;
-        cur.owed += Number(p.amount) - Number(p.amount_paid);
-        agg.set(p.supplier_id, cur);
-      }
-      return (sp.data ?? []).map((s) => ({ ...s, agg: agg.get(s.id) ?? { total: 0, owed: 0, count: 0 } }));
-    },
+    queryFn: () => apiGet<Supplier[]>("/api/suppliers"),
   });
-  const filtered = suppliers.filter((s) => s.name.toLowerCase().includes(q.toLowerCase()));
+  const filtered = suppliers.filter((s) => {
+    const needle = q.toLowerCase();
+    return s.name.toLowerCase().includes(needle) || (s.phone ?? "").toLowerCase().includes(needle);
+  });
+  const { sorted, sortKey, sortOrder, handleSort } = useTableSort(filtered, "name", "asc");
 
   const save = useMutation({
     mutationFn: async (f: Form) => {
       if (!f.name.trim()) throw new Error("Nombre requerido.");
+      const body = { name: f.name, phone: f.phone || null, notes: f.notes || null };
       if (f.id) {
-        const { error } = await supabase.from("suppliers").update({ name: f.name, phone: f.phone || null, notes: f.notes || null }).eq("id", f.id);
-        if (error) throw error;
+        await apiPut(`/api/suppliers/${f.id}`, body);
       } else {
-        const { error } = await supabase.from("suppliers").insert({ name: f.name, phone: f.phone || null, notes: f.notes || null });
-        if (error) throw error;
+        await apiPost("/api/suppliers", body);
       }
     },
     onSuccess: () => { toast.success("Guardado"); setEditing(null); qc.invalidateQueries(); },
@@ -75,9 +66,9 @@ function Suppliers() {
           <h1 className="text-2xl font-semibold tracking-tight">Proveedores</h1>
           <p className="text-sm text-muted-foreground">{suppliers.length} proveedores registrados.</p>
         </div>
-        <div className="flex gap-2">
-          <Input placeholder="Buscar…" value={q} onChange={(e) => setQ(e.target.value)} className="w-56" />
-          <Button onClick={() => setEditing({ name: "", phone: "", notes: "" })}><Plus className="h-4 w-4 mr-1" /> Nuevo</Button>
+        <div className="flex flex-col gap-2 w-full sm:flex-row sm:w-auto">
+          <Input placeholder="Buscar por nombre o teléfono…" value={q} onChange={(e) => setQ(e.target.value)} className="w-full sm:w-56" />
+          <Button className="w-full sm:w-auto" onClick={() => setEditing({ name: "", phone: "", notes: "" })}><Plus className="h-4 w-4 mr-1" /> Nuevo</Button>
         </div>
       </div>
 
@@ -85,19 +76,20 @@ function Suppliers() {
         <CardContent className="p-0 overflow-x-auto">
           <Table>
             <TableHeader><TableRow>
-              <TableHead>Nombre</TableHead><TableHead>Teléfono</TableHead>
-              <TableHead className="text-right">Facturas</TableHead>
-              <TableHead className="text-right">Total</TableHead>
-              <TableHead className="text-right">Debo</TableHead>
+              <SortableHead sortKey="name" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort}>Nombre</SortableHead>
+              <SortableHead sortKey="phone" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} className="hidden sm:table-cell">Teléfono</SortableHead>
+              <SortableHead sortKey="agg.count" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right" className="hidden md:table-cell">Facturas</SortableHead>
+              <SortableHead sortKey="agg.total" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right" className="hidden sm:table-cell">Total</SortableHead>
+              <SortableHead sortKey="agg.owed" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right">Debo</SortableHead>
               <TableHead className="w-16"></TableHead>
             </TableRow></TableHeader>
             <TableBody>
-              {filtered.map((s) => (
+              {sorted.map((s) => (
                 <TableRow key={s.id}>
                   <TableCell className="font-medium">{s.name}</TableCell>
-                  <TableCell className="text-muted-foreground">{s.phone || "—"}</TableCell>
-                  <TableCell className="text-right tabular-nums">{s.agg.count}</TableCell>
-                  <TableCell className="text-right tabular-nums">{money(s.agg.total)}</TableCell>
+                  <TableCell className="hidden sm:table-cell text-muted-foreground">{s.phone || "—"}</TableCell>
+                  <TableCell className="hidden md:table-cell text-right tabular-nums">{s.agg.count}</TableCell>
+                  <TableCell className="hidden sm:table-cell text-right tabular-nums">{money(s.agg.total)}</TableCell>
                   <TableCell className="text-right tabular-nums">{s.agg.owed > 0 ? <Badge variant="destructive">{money(s.agg.owed)}</Badge> : money(0)}</TableCell>
                   <TableCell>
                     <Button variant="ghost" size="icon" onClick={() => setEditing({ id: s.id, name: s.name, phone: s.phone ?? "", notes: s.notes ?? "" })}><Pencil className="h-4 w-4" /></Button>

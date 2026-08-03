@@ -1,15 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { supabase } from "@/integrations/supabase/client";
+import { apiGet } from "@/lib/api";
+import type { Reports as ReportsData, Sale } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, SortableHead } from "@/components/ui/table";
 import { FileDown, FileSpreadsheet } from "lucide-react";
 import { money, formatDate } from "@/lib/format";
 import { exportToExcel, exportToPDF } from "@/lib/export";
+import { useTableSort } from "@/lib/sort";
 
 export const Route = createFileRoute("/reports")({
   head: () => ({
@@ -31,36 +33,23 @@ function Reports() {
   const [from, setFrom] = useState(isoDate(monthAgo));
   const [to, setTo] = useState(isoDate(today));
 
-  const { data } = useQuery({
+  const { data: report } = useQuery({
     queryKey: ["report", from, to],
-    queryFn: async () => {
-      const fromISO = new Date(from + "T00:00:00").toISOString();
-      const toISO = new Date(to + "T23:59:59").toISOString();
-      const [salesRes, itemsRes] = await Promise.all([
-        supabase.from("sales").select("*").gte("sale_date", fromISO).lte("sale_date", toISO),
-        supabase.from("sale_items").select("*, sales!inner(sale_date)").gte("sales.sale_date", fromISO).lte("sales.sale_date", toISO),
-      ]);
-      return { sales: salesRes.data ?? [], items: itemsRes.data ?? [] };
-    },
+    queryFn: () => apiGet<ReportsData>(`/api/reports?from=${from}&to=${to}`),
+  });
+  const { data: sales = [] } = useQuery({
+    queryKey: ["report-sales", from, to],
+    queryFn: () => apiGet<Sale[]>(`/api/sales?from=${from}&to=${to}`),
   });
 
-  const agg = useMemo(() => {
-    if (!data) return null;
-    const total = data.sales.reduce((s, r) => s + Number(r.total), 0);
-    const cost = data.sales.reduce((s, r) => s + Number(r.cost_total), 0);
-    const profit = total - cost;
-    const productMap = new Map<string, { name: string; qty: number; revenue: number; profit: number }>();
-    for (const it of data.items) {
-      const cur = productMap.get(it.product_name) ?? { name: it.product_name, qty: 0, revenue: 0, profit: 0 };
-      cur.qty += Number(it.quantity);
-      cur.revenue += Number(it.subtotal);
-      cur.profit += (Number(it.unit_price) - Number(it.unit_cost)) * Number(it.quantity);
-      productMap.set(it.product_name, cur);
-    }
-    const byRevenue = Array.from(productMap.values()).sort((a, b) => b.revenue - a.revenue);
-    const byProfit = Array.from(productMap.values()).sort((a, b) => b.profit - a.profit);
-    return { total, cost, profit, salesCount: data.sales.length, byRevenue, byProfit };
-  }, [data]);
+  const agg = report && {
+    total: report.total_sales,
+    cost: report.total_cost,
+    profit: report.total_profit,
+    salesCount: sales.length,
+    byRevenue: report.top_by_revenue.map((p) => ({ name: p.product_name, qty: p.quantity, revenue: p.revenue, profit: p.profit })),
+    byProfit: report.top_by_profit.map((p) => ({ name: p.product_name, qty: p.quantity, revenue: p.revenue, profit: p.profit })),
+  };
 
   const exportExcel = () => {
     if (!agg) return;
@@ -88,18 +77,18 @@ function Reports() {
 
       <Card>
         <CardContent className="pt-6 flex flex-wrap items-end gap-3">
-          <div><Label>Desde</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
-          <div><Label>Hasta</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
-          <div className="ml-auto flex gap-2">
-            <Button variant="outline" onClick={exportExcel}><FileSpreadsheet className="h-4 w-4 mr-1" /> Excel</Button>
-            <Button variant="outline" onClick={exportPdf}><FileDown className="h-4 w-4 mr-1" /> PDF</Button>
+          <div className="w-full sm:w-auto"><Label>Desde</Label><Input type="date" value={from} onChange={(e) => setFrom(e.target.value)} /></div>
+          <div className="w-full sm:w-auto"><Label>Hasta</Label><Input type="date" value={to} onChange={(e) => setTo(e.target.value)} /></div>
+          <div className="w-full flex gap-2 sm:ml-auto sm:w-auto">
+            <Button variant="outline" onClick={exportExcel} className="flex-1 sm:flex-none"><FileSpreadsheet className="h-4 w-4 mr-1" /> Excel</Button>
+            <Button variant="outline" onClick={exportPdf} className="flex-1 sm:flex-none"><FileDown className="h-4 w-4 mr-1" /> PDF</Button>
           </div>
         </CardContent>
       </Card>
 
       {agg && (
         <>
-          <div className="grid gap-4 sm:grid-cols-4">
+          <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
             <Stat title="Ventas" value={String(agg.salesCount)} />
             <Stat title="Ingreso" value={money(agg.total)} />
             <Stat title="Costo" value={money(agg.cost)} />
@@ -110,37 +99,13 @@ function Reports() {
             <Card>
               <CardHeader><CardTitle>Más vendidos (por ingreso)</CardTitle></CardHeader>
               <CardContent className="p-0">
-                <Table>
-                  <TableHeader><TableRow><TableHead>Producto</TableHead><TableHead className="text-right">Und</TableHead><TableHead className="text-right">Ingreso</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {agg.byRevenue.slice(0, 15).map((p) => (
-                      <TableRow key={p.name}>
-                        <TableCell className="font-medium">{p.name}</TableCell>
-                        <TableCell className="text-right tabular-nums">{p.qty}</TableCell>
-                        <TableCell className="text-right tabular-nums">{money(p.revenue)}</TableCell>
-                      </TableRow>
-                    ))}
-                    {agg.byRevenue.length === 0 && <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground py-6">Sin datos.</TableCell></TableRow>}
-                  </TableBody>
-                </Table>
+                <RevenueTable items={agg.byRevenue} />
               </CardContent>
             </Card>
             <Card>
               <CardHeader><CardTitle>Más rentables (por ganancia)</CardTitle></CardHeader>
               <CardContent className="p-0">
-                <Table>
-                  <TableHeader><TableRow><TableHead>Producto</TableHead><TableHead className="text-right">Und</TableHead><TableHead className="text-right">Ganancia</TableHead></TableRow></TableHeader>
-                  <TableBody>
-                    {agg.byProfit.slice(0, 15).map((p) => (
-                      <TableRow key={p.name}>
-                        <TableCell className="font-medium">{p.name}</TableCell>
-                        <TableCell className="text-right tabular-nums">{p.qty}</TableCell>
-                        <TableCell className="text-right tabular-nums text-success">{money(p.profit)}</TableCell>
-                      </TableRow>
-                    ))}
-                    {agg.byProfit.length === 0 && <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground py-6">Sin datos.</TableCell></TableRow>}
-                  </TableBody>
-                </Table>
+                <ProfitTable items={agg.byProfit} />
               </CardContent>
             </Card>
           </div>
@@ -158,5 +123,51 @@ function Stat({ title, value, highlight }: { title: string; value: string; highl
         <div className={`text-2xl font-semibold tabular-nums mt-1 ${highlight ? "text-success" : ""}`}>{value}</div>
       </CardContent>
     </Card>
+  );
+}
+
+function RevenueTable({ items }: { items: Array<{ name: string; qty: number; revenue: number }> }) {
+  const { sorted, sortKey, sortOrder, handleSort } = useTableSort(items, "revenue", "desc");
+  return (
+    <Table>
+      <TableHeader><TableRow>
+        <SortableHead sortKey="name" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort}>Producto</SortableHead>
+        <SortableHead sortKey="qty" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right">Und</SortableHead>
+        <SortableHead sortKey="revenue" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right">Ingreso</SortableHead>
+      </TableRow></TableHeader>
+      <TableBody>
+        {sorted.slice(0, 15).map((p) => (
+          <TableRow key={p.name}>
+            <TableCell className="font-medium max-w-[140px] truncate">{p.name}</TableCell>
+            <TableCell className="text-right tabular-nums">{p.qty}</TableCell>
+            <TableCell className="text-right tabular-nums">{money(p.revenue)}</TableCell>
+          </TableRow>
+        ))}
+        {items.length === 0 && <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground py-6">Sin datos.</TableCell></TableRow>}
+      </TableBody>
+    </Table>
+  );
+}
+
+function ProfitTable({ items }: { items: Array<{ name: string; qty: number; profit: number }> }) {
+  const { sorted, sortKey, sortOrder, handleSort } = useTableSort(items, "profit", "desc");
+  return (
+    <Table>
+      <TableHeader><TableRow>
+        <SortableHead sortKey="name" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort}>Producto</SortableHead>
+        <SortableHead sortKey="qty" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right">Und</SortableHead>
+        <SortableHead sortKey="profit" currentSort={sortKey} currentOrder={sortOrder} onSort={handleSort} align="right">Ganancia</SortableHead>
+      </TableRow></TableHeader>
+      <TableBody>
+        {sorted.slice(0, 15).map((p) => (
+          <TableRow key={p.name}>
+            <TableCell className="font-medium max-w-[140px] truncate">{p.name}</TableCell>
+            <TableCell className="text-right tabular-nums">{p.qty}</TableCell>
+            <TableCell className="text-right tabular-nums text-success">{money(p.profit)}</TableCell>
+          </TableRow>
+        ))}
+        {items.length === 0 && <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground py-6">Sin datos.</TableCell></TableRow>}
+      </TableBody>
+    </Table>
   );
 }

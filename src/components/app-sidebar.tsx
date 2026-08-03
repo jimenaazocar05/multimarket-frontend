@@ -2,13 +2,13 @@ import { Link, useRouterState } from "@tanstack/react-router";
 import {
   LayoutDashboard,
   ShoppingCart,
+  ShoppingBasket,
   Package,
   Users,
   Truck,
   HandCoins,
   Receipt,
   BarChart3,
-  Store,
 } from "lucide-react";
 import {
   Sidebar,
@@ -25,6 +25,7 @@ import {
 const primary = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Punto de venta", url: "/pos", icon: ShoppingCart },
+  { title: "Compras", url: "/purchases", icon: ShoppingBasket },
 ];
 const catalog = [
   { title: "Inventario", url: "/inventory", icon: Package },
@@ -64,13 +65,15 @@ export function AppSidebar() {
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="border-b border-sidebar-border">
-        <div className="flex items-center gap-2 px-2 py-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground">
-            <Store className="h-4 w-4" />
-          </div>
+        <div className="flex items-center gap-2.5 px-2 py-2">
+          <img
+            src="/logo_multimarket.png"
+            alt="Multimarket Logo"
+            className="h-9 w-9 shrink-0 object-contain drop-shadow-sm"
+          />
           <div className="flex flex-col leading-tight">
-            <span className="text-sm font-semibold">Multimarket</span>
-            <span className="text-xs text-sidebar-foreground/70">Sistema de ventas</span>
+            <span className="text-base font-bold tracking-tight text-sidebar-foreground">MULTIMARKET</span>
+            <span className="text-xs text-sidebar-foreground/70 font-medium">Sistema de ventas</span>
           </div>
         </div>
       </SidebarHeader>
