@@ -17,6 +17,40 @@ const errorMiddleware = createMiddleware().server(async ({ next }) => {
   }
 });
 
+// El backend (multimarket-backend) no se publica: solo vive en la red
+// interna docker "front-back-network". El navegador llama a rutas /api/*
+// del mismo origen público del frontend; este middleware las reenvía al
+// backend interno para que nunca haya que exponerlo.
+const BACKEND_URL = process.env.BACKEND_URL ?? "http://backend:8000";
+
+const apiProxyMiddleware = createMiddleware().server(async ({ request, pathname, next }) => {
+  if (!pathname.startsWith("/api/")) {
+    return await next();
+  }
+
+  const incomingUrl = new URL(request.url);
+  const target = new URL(pathname + incomingUrl.search, BACKEND_URL);
+
+  const headers = new Headers(request.headers);
+  headers.delete("host");
+  headers.delete("content-length");
+
+  const hasBody = request.method !== "GET" && request.method !== "HEAD";
+
+  const backendResponse = await fetch(target, {
+    method: request.method,
+    headers,
+    body: hasBody ? request.body : undefined,
+    ...(hasBody ? { duplex: "half" } : {}),
+  } as RequestInit);
+
+  return new Response(backendResponse.body, {
+    status: backendResponse.status,
+    statusText: backendResponse.statusText,
+    headers: backendResponse.headers,
+  });
+});
+
 export const startInstance = createStart(() => ({
-  requestMiddleware: [errorMiddleware],
+  requestMiddleware: [apiProxyMiddleware, errorMiddleware],
 }));

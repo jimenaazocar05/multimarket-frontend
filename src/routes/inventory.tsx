@@ -53,7 +53,13 @@ function Inventory() {
     (p, key) => (key === "margin" ? Number(p.price) - Number(p.cost) : undefined)
   );
 
-  const totalCostValue = products.reduce((acc, p) => acc + Math.max(0, Number(p.stock)) * Number(p.cost), 0);
+  const totalCostValue = products.reduce((acc, p) => {
+    const stock = Math.max(0, Number(p.stock));
+    const cost = Number(p.cost);
+    const unit = (p.unit || "").trim().toLowerCase();
+    const isGramOrMl = /^(gr|g|gramo|gramos|grs|ml|mililitro|mililitros|cc)$/.test(unit);
+    return acc + (isGramOrMl ? (stock / 1000) * cost : stock * cost);
+  }, 0);
 
   const save = useMutation({
     mutationFn: async (p: Partial<Product>) => {
