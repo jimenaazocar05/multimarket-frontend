@@ -45,6 +45,7 @@ function POS() {
   const [newCustomer, setNewCustomer] = useState<{ name: string; phone: string } | null>(null);
   const [status, setStatus] = useState<"paid" | "credit">("paid");
   const [notes, setNotes] = useState("");
+  const [saleDate, setSaleDate] = useState("");
 
   const { data: products = [] } = useQuery({
     queryKey: ["products", "active"],
@@ -112,6 +113,7 @@ function POS() {
         customer_id: selectedCustomer?.id ?? null,
         customer_name: selectedCustomer?.name ?? null,
         status,
+        sale_date: saleDate ? `${saleDate}T12:00:00Z` : null,
         notes: notes || null,
         items: cart.map((i) => ({
           product_id: i.product_id,
@@ -124,7 +126,7 @@ function POS() {
     },
     onSuccess: () => {
       toast.success("Venta registrada");
-      setCart([]); setNotes(""); setStatus("paid"); setSelectedCustomer(null); setCustomerQuery("");
+      setCart([]); setNotes(""); setSaleDate(""); setStatus("paid"); setSelectedCustomer(null); setCustomerQuery("");
       qc.invalidateQueries();
     },
     onError: (e: Error) => toast.error(e.message),
@@ -285,6 +287,10 @@ function POS() {
                   Fiado
                 </Button>
               </div>
+            </div>
+            <div>
+              <Label>Fecha de venta (opcional)</Label>
+              <Input type="date" value={saleDate} onChange={(e) => setSaleDate(e.target.value)} />
             </div>
             <div>
               <Label>Notas (opcional)</Label>

@@ -91,6 +91,7 @@ export type SaleInput = {
   customer_id: string | null;
   customer_name: string | null;
   status: "paid" | "credit";
+  sale_date?: string | null;
   notes?: string | null;
   items: SaleItemInput[];
 };
@@ -182,8 +183,10 @@ export type PurchaseInput = {
   supplier_id: string | null;
   supplier_name: string | null;
   concept: string;
+  issue_date?: string | null;
   due_date?: string | null;
   notes?: string | null;
+  is_cash?: boolean;
   items: PurchaseItemInput[];
 };
 

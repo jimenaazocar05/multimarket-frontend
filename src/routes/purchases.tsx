@@ -46,6 +46,7 @@ function Purchases() {
 
   const [concept, setConcept] = useState("Compra de mercancía");
   const [dueDate, setDueDate] = useState("");
+  const [issueDate, setIssueDate] = useState("");
   const [notes, setNotes] = useState("");
   const [isCash, setIsCash] = useState(false);
 
@@ -136,6 +137,7 @@ function Purchases() {
         supplier_id: selectedSupplier?.id ?? null,
         supplier_name: selectedSupplier?.name ?? null,
         concept,
+        issue_date: issueDate || null,
         due_date: isCash ? null : (dueDate || null),
         notes: notes || null,
         is_cash: isCash,
@@ -149,7 +151,7 @@ function Purchases() {
     },
     onSuccess: () => {
       toast.success("Compra registrada");
-      setCart([]); setNotes(""); setDueDate(""); setConcept("Compra de mercancía"); setIsCash(false);
+      setCart([]); setNotes(""); setDueDate(""); setIssueDate(""); setConcept("Compra de mercancía"); setIsCash(false);
       setSelectedSupplier(null); setSupplierQuery("");
       qc.invalidateQueries();
     },
@@ -324,6 +326,7 @@ function Purchases() {
               </div>
             </div>
             <div><Label>Concepto</Label><Input value={concept} onChange={(e) => setConcept(e.target.value)} /></div>
+            <div><Label>Fecha de compra (opcional)</Label><Input type="date" value={issueDate} onChange={(e) => setIssueDate(e.target.value)} /></div>
             {!isCash && (
               <div><Label>Fecha de vencimiento (opcional)</Label><Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></div>
             )}
