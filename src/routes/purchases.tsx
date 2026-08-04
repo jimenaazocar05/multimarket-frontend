@@ -47,6 +47,7 @@ function Purchases() {
   const [concept, setConcept] = useState("Compra de mercancía");
   const [dueDate, setDueDate] = useState("");
   const [notes, setNotes] = useState("");
+  const [isCash, setIsCash] = useState(false);
 
   const { data: products = [] } = useQuery({
     queryKey: ["products"],
@@ -135,8 +136,9 @@ function Purchases() {
         supplier_id: selectedSupplier?.id ?? null,
         supplier_name: selectedSupplier?.name ?? null,
         concept,
-        due_date: dueDate || null,
+        due_date: isCash ? null : (dueDate || null),
         notes: notes || null,
+        is_cash: isCash,
         items: cart.map((i) => ({
           product_id: i.product_id,
           product_name: i.product_name,
@@ -147,7 +149,7 @@ function Purchases() {
     },
     onSuccess: () => {
       toast.success("Compra registrada");
-      setCart([]); setNotes(""); setDueDate(""); setConcept("Compra de mercancía");
+      setCart([]); setNotes(""); setDueDate(""); setConcept("Compra de mercancía"); setIsCash(false);
       setSelectedSupplier(null); setSupplierQuery("");
       qc.invalidateQueries();
     },
@@ -300,8 +302,31 @@ function Purchases() {
                 </>
               )}
             </div>
+            <div>
+              <Label className="mb-1.5 block">Tipo de compra</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  type="button"
+                  variant={!isCash ? "default" : "outline"}
+                  onClick={() => setIsCash(false)}
+                  className="w-full"
+                >
+                  A crédito (genera deuda)
+                </Button>
+                <Button
+                  type="button"
+                  variant={isCash ? "default" : "outline"}
+                  onClick={() => { setIsCash(true); setDueDate(""); }}
+                  className="w-full"
+                >
+                  De contado (pagada)
+                </Button>
+              </div>
+            </div>
             <div><Label>Concepto</Label><Input value={concept} onChange={(e) => setConcept(e.target.value)} /></div>
-            <div><Label>Fecha de vencimiento (opcional)</Label><Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></div>
+            {!isCash && (
+              <div><Label>Fecha de vencimiento (opcional)</Label><Input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} /></div>
+            )}
             <div><Label>Notas (opcional)</Label><Textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)} /></div>
             <div className="border-t pt-4 flex justify-between items-center">
               <span className="text-sm text-muted-foreground">Total</span>
@@ -311,7 +336,9 @@ function Purchases() {
               <Plus className="h-4 w-4 mr-1" /> {save.isPending ? "Guardando…" : "Registrar compra"}
             </Button>
             <p className="text-xs text-muted-foreground text-center">
-              Aumenta el stock de cada producto y genera una cuenta por pagar al proveedor.
+              {isCash
+                ? "Aumenta el stock de cada producto. Al ser de contado, queda registrada como pagada y no genera deuda."
+                : "Aumenta el stock de cada producto y genera una cuenta por pagar pendiente al proveedor."}
             </p>
           </CardContent>
         </Card>
