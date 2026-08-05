@@ -9,6 +9,8 @@ import {
   HandCoins,
   Receipt,
   BarChart3,
+  ListOrdered,
+  Store,
 } from "lucide-react";
 import {
   Sidebar,
@@ -25,6 +27,8 @@ import {
 const primary = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Punto de venta", url: "/pos", icon: ShoppingCart },
+  { title: "Ventas", url: "/sales", icon: ListOrdered },
+  { title: "Punto de compra", url: "/purchase-point", icon: Store },
   { title: "Compras", url: "/purchases", icon: ShoppingBasket },
 ];
 const catalog = [
