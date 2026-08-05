@@ -73,7 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     // Verifica que el token siga siendo válido contra el backend
-    fetch(`${API_URL}/auth/me`, {
+    fetch(`${API_URL}/api/auth/me`, {
       headers: { Authorization: `Bearer ${saved.token}` },
     })
       .then(async (res) => {
@@ -90,7 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login: AuthCtx["login"] = useCallback(async (username, password) => {
     try {
-      const res = await fetch(`${API_URL}/auth/login`, {
+      const res = await fetch(`${API_URL}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: username.trim(), password }),
@@ -123,7 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const token = localStorage.getItem(TOKEN_KEY);
     if (token) {
       try {
-        await fetch(`${API_URL}/auth/logout?token=${encodeURIComponent(token)}`, {
+        await fetch(`${API_URL}/api/auth/logout?token=${encodeURIComponent(token)}`, {
           method: "POST",
         });
       } catch {
