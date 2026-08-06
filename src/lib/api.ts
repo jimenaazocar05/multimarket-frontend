@@ -1,9 +1,14 @@
 const API_URL = import.meta.env.VITE_API_URL || process.env.VITE_API_URL || "http://localhost:8000";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = localStorage.getItem("multimarket.token");
   const res = await fetch(`${API_URL}${path}`, {
     ...init,
-    headers: { "Content-Type": "application/json", ...(init?.headers ?? {}) },
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(init?.headers ?? {}),
+    },
   });
   if (!res.ok) {
     let detail = res.statusText;
@@ -231,4 +236,21 @@ export type Reports = {
   total_profit: number;
   top_by_revenue: TopProduct[];
   top_by_profit: TopProduct[];
+};
+
+export type AppUser = {
+  id: string;
+  name: string;
+  username: string;
+  role: "admin" | "vendedor";
+  active: boolean;
+  created_at: string;
+};
+
+export type AppUserInput = {
+  name: string;
+  username: string;
+  password?: string;
+  role: "admin" | "vendedor";
+  active?: boolean;
 };
