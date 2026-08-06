@@ -11,6 +11,7 @@ import {
   BarChart3,
   ListOrdered,
   Store,
+  UserCog,
 } from "lucide-react";
 import {
   Sidebar,
@@ -23,6 +24,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import { useAuth } from "@/lib/auth";
 
 const primary = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
@@ -41,10 +43,14 @@ const finance = [
   { title: "Cuentas por pagar", url: "/payables", icon: Receipt },
   { title: "Reportes", url: "/reports", icon: BarChart3 },
 ];
+const admin = [
+  { title: "Usuarios y roles", url: "/admin/users", icon: UserCog },
+];
 
 export function AppSidebar() {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   const isActive = (u: string) => (u === "/" ? pathname === "/" : pathname.startsWith(u));
+  const { user } = useAuth();
 
   const renderGroup = (label: string, items: typeof primary) => (
     <SidebarGroup>
@@ -85,6 +91,7 @@ export function AppSidebar() {
         {renderGroup("Operación", primary)}
         {renderGroup("Catálogo", catalog)}
         {renderGroup("Finanzas", finance)}
+        {user?.role === "admin" && renderGroup("Administración", admin)}
       </SidebarContent>
     </Sidebar>
   );

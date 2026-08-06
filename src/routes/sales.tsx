@@ -279,10 +279,6 @@ function SalesPage() {
                             <span className="text-muted-foreground">Fecha: </span>
                             <span className="font-medium">{formatDate(sale.sale_date)}</span>
                           </div>
-                          <div>
-                            <span className="text-muted-foreground">ID: </span>
-                            <span className="font-mono text-xs">{sale.id}</span>
-                          </div>
                           {sale.notes && (
                             <div>
                               <span className="text-muted-foreground">Notas: </span>

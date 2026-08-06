@@ -308,10 +308,6 @@ function PurchasesPage() {
                             <span className="text-muted-foreground">Fecha: </span>
                             <span className="font-medium">{formatDate(purchase.issue_date)}</span>
                           </div>
-                          <div>
-                            <span className="text-muted-foreground">ID: </span>
-                            <span className="font-mono text-xs">{purchase.id}</span>
-                          </div>
                           {isCredit && purchase.due_date && (
                             <div>
                               <span className="text-muted-foreground">Vence: </span>
