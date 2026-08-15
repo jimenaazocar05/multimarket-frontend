@@ -44,6 +44,12 @@ export async function createExpense(input: PayableInput): Promise<Payable> {
   return apiPost<Payable>("/api/payables", input);
 }
 
+/** Edita una cuenta por pagar sin productos asociados (si tiene productos,
+ * es una compra y debe editarse con updatePurchase). */
+export async function updatePayable(id: string, input: PayableInput): Promise<Payable> {
+  return apiPut<Payable>(`/api/payables/${id}`, input);
+}
+
 /** Elimina un gasto o cualquier cuenta por pagar. */
 export async function deleteExpense(id: string): Promise<void> {
   return apiDelete<void>(`/api/payables/${id}`);

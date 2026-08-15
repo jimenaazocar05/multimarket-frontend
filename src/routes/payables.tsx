@@ -11,9 +11,19 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, SortableHead } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { HandCoins, Plus, Eye, X } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
+import { HandCoins, Plus, Eye, Pencil, Trash2, X } from "lucide-react";
 import { money, formatDate } from "@/lib/format";
-import { registerPayment } from "@/lib/data";
+import { registerPayment, updatePayable, deleteExpense } from "@/lib/data";
 import { useTableSort } from "@/lib/sort";
 import { toast } from "sonner";
 
@@ -30,6 +40,16 @@ export const Route = createFileRoute("/payables")({
 });
 
 type NewForm = { supplier: Supplier | null; concept: string; amount: string; due_date: string; notes: string };
+
+type PayableEditForm = {
+  id: string;
+  supplierId: string | null;
+  supplierName: string | null;
+  concept: string;
+  amount: string;
+  dueDate: string;
+  notes: string;
+};
 
 type PayableGroup = {
   key: string;
@@ -87,6 +107,10 @@ function Payables() {
   const [q, setQ] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "credit">("all");
+  const [editingPayable, setEditingPayable] = useState<PayableEditForm | null>(null);
+  const [editSupplierQuery, setEditSupplierQuery] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Payable | null>(null);
 
   const { data: suppliers = [] } = useQuery({
     queryKey: ["suppliers"],
@@ -98,6 +122,7 @@ function Payables() {
   });
   const openItems = data.filter((p) => p.balance > 0.001);
   const totalOwed = openItems.reduce((s, r) => s + r.balance, 0);
+  const totalPaid = data.reduce((s, r) => s + Number(r.amount_paid), 0);
 
   const phoneBySupplierId = useMemo(() => {
     const map = new Map<string, string>();
@@ -115,7 +140,14 @@ function Payables() {
     });
   }, [data, dateFrom, dateTo]);
 
-  const groups = useMemo(() => groupBySupplier(dateFiltered), [dateFiltered]);
+  const statusFiltered = useMemo(() => {
+    if (statusFilter === "all") return dateFiltered;
+    return dateFiltered.filter((p) =>
+      statusFilter === "credit" ? p.balance > 0.001 : p.balance <= 0.001
+    );
+  }, [dateFiltered, statusFilter]);
+
+  const groups = useMemo(() => groupBySupplier(statusFiltered), [statusFiltered]);
 
   const filteredGroups = useMemo(() => {
     if (!q.trim()) return groups;
@@ -133,6 +165,14 @@ function Payables() {
       (s) => s.name.toLowerCase().includes(needle) || (s.phone ?? "").toLowerCase().includes(needle),
     ).slice(0, 6);
   }, [supplierQuery, suppliers]);
+
+  const editSupplierResults = useMemo(() => {
+    if (!editSupplierQuery.trim()) return [];
+    const needle = editSupplierQuery.toLowerCase();
+    return suppliers.filter(
+      (s) => s.name.toLowerCase().includes(needle) || (s.phone ?? "").toLowerCase().includes(needle),
+    ).slice(0, 6);
+  }, [editSupplierQuery, suppliers]);
 
   const { sorted, sortKey, sortOrder, handleSort } = useTableSort(filteredGroups, "supplier_name", "asc");
 
@@ -194,6 +234,43 @@ function Payables() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const openEditPayable = (p: Payable) => {
+    setEditingPayable({
+      id: p.id,
+      supplierId: p.supplier_id,
+      supplierName: p.supplier_name,
+      concept: p.concept,
+      amount: String(p.amount),
+      dueDate: p.due_date ?? "",
+      notes: p.notes ?? "",
+    });
+    setEditSupplierQuery("");
+  };
+
+  const saveEditPayable = useMutation({
+    mutationFn: async (f: PayableEditForm) => {
+      if (!f.concept.trim()) throw new Error("El concepto es obligatorio.");
+      const amountNum = Number(f.amount);
+      if (!amountNum || amountNum <= 0) throw new Error("Ingresa un monto válido.");
+      await updatePayable(f.id, {
+        supplier_id: f.supplierId,
+        supplier_name: f.supplierName,
+        concept: f.concept,
+        amount: amountNum,
+        due_date: f.dueDate || null,
+        notes: f.notes || null,
+      });
+    },
+    onSuccess: () => { toast.success("Cuenta actualizada"); setEditingPayable(null); qc.invalidateQueries(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const removePayable = useMutation({
+    mutationFn: (id: string) => deleteExpense(id),
+    onSuccess: () => { toast.success("Cuenta eliminada"); setDeleteTarget(null); qc.invalidateQueries(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -211,14 +288,36 @@ function Payables() {
             <Label className="text-xs text-muted-foreground">Hasta</Label>
             <Input type="date" value={dateTo} onChange={(e) => setDateTo(e.target.value)} min={dateFrom || undefined} />
           </div>
-          <Card className="w-full sm:min-w-56"><CardContent className="pt-4">
-            <div className="text-xs uppercase text-muted-foreground">Total por pagar</div>
-            <div className="text-2xl font-semibold tabular-nums text-destructive">{money(totalOwed)}</div>
-          </CardContent></Card>
+          <div className="flex gap-3 w-full sm:w-auto">
+            <Card className="flex-1 sm:min-w-40"><CardContent className="pt-4">
+              <div className="text-xs uppercase text-muted-foreground">Total por pagar</div>
+              <div className="text-2xl font-semibold tabular-nums text-destructive">{money(totalOwed)}</div>
+            </CardContent></Card>
+            <Card className="flex-1 sm:min-w-40"><CardContent className="pt-4">
+              <div className="text-xs uppercase text-muted-foreground">Total pagado</div>
+              <div className="text-2xl font-semibold tabular-nums text-success">{money(totalPaid)}</div>
+            </CardContent></Card>
+          </div>
           <Button className="w-full sm:w-auto" onClick={() => setCreating({ supplier: null, concept: "", amount: "", due_date: "", notes: "" })}>
             <Plus className="h-4 w-4 mr-1" /> Nueva cuenta
           </Button>
         </div>
+      </div>
+
+      <div className="flex gap-2">
+        {(["all", "credit", "paid"] as const).map((s) => (
+          <button
+            key={s}
+            onClick={() => setStatusFilter(s)}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors border ${
+              statusFilter === s
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-card text-muted-foreground border-border hover:bg-accent"
+            }`}
+          >
+            {s === "all" ? "Todas" : s === "credit" ? "Por pagar" : "Pagada"}
+          </button>
+        ))}
       </div>
 
       <Card>
@@ -392,12 +491,119 @@ function Payables() {
         </DialogContent>
       </Dialog>
 
-      <SupplierDetailDialog group={viewing} onClose={() => setViewing(null)} />
+      <SupplierDetailDialog
+        group={viewing}
+        onClose={() => setViewing(null)}
+        onEdit={(p) => { setViewing(null); openEditPayable(p); }}
+        onDelete={(p) => { setViewing(null); setDeleteTarget(p); }}
+      />
+
+      {/* ── Edit payable dialog ── */}
+      <Dialog open={!!editingPayable} onOpenChange={(o) => !o && setEditingPayable(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Editar cuenta por pagar</DialogTitle></DialogHeader>
+          {editingPayable && (
+            <div className="grid gap-3">
+              <div>
+                <Label>Proveedor</Label>
+                {editingPayable.supplierId || editingPayable.supplierName ? (
+                  <div className="flex items-center justify-between border rounded-md px-3 py-2 mt-1">
+                    <div className="text-sm font-medium">{editingPayable.supplierName}</div>
+                    <Button
+                      variant="ghost" size="icon" className="h-7 w-7"
+                      onClick={() => setEditingPayable({ ...editingPayable, supplierId: null, supplierName: null })}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <Input
+                      placeholder="Buscar proveedor…"
+                      value={editSupplierQuery}
+                      onChange={(e) => setEditSupplierQuery(e.target.value)}
+                      className="mt-1"
+                    />
+                    {editSupplierQuery.trim() && (
+                      <div className="border rounded-md divide-y max-h-48 overflow-auto mt-1">
+                        {editSupplierResults.map((s) => (
+                          <button
+                            key={s.id}
+                            type="button"
+                            onClick={() => { setEditingPayable({ ...editingPayable, supplierId: s.id, supplierName: s.name }); setEditSupplierQuery(""); }}
+                            className="w-full text-left px-3 py-2 hover:bg-accent text-sm"
+                          >
+                            <div className="font-medium">{s.name}</div>
+                            {s.phone && <div className="text-xs text-muted-foreground">{s.phone}</div>}
+                          </button>
+                        ))}
+                        {editSupplierResults.length === 0 && (
+                          <div className="px-3 py-2 text-sm text-muted-foreground">Sin resultados.</div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+              <div><Label>Concepto *</Label><Input value={editingPayable.concept} onChange={(e) => setEditingPayable({ ...editingPayable, concept: e.target.value })} /></div>
+              <div className="grid grid-cols-2 gap-2">
+                <div><Label>Monto *</Label><Input type="number" step="0.01" value={editingPayable.amount} onChange={(e) => setEditingPayable({ ...editingPayable, amount: e.target.value })} /></div>
+                <div><Label>Vence</Label><Input type="date" value={editingPayable.dueDate} onChange={(e) => setEditingPayable({ ...editingPayable, dueDate: e.target.value })} /></div>
+              </div>
+              <div><Label>Notas</Label><Textarea rows={2} value={editingPayable.notes} onChange={(e) => setEditingPayable({ ...editingPayable, notes: e.target.value })} /></div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingPayable(null)}>Cancelar</Button>
+            <Button onClick={() => editingPayable && saveEditPayable.mutate(editingPayable)} disabled={saveEditPayable.isPending}>
+              {saveEditPayable.isPending ? "Guardando…" : "Guardar cambios"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete confirmation ── */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar esta cuenta por pagar?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminará la cuenta <strong>{deleteTarget?.concept}</strong> a{" "}
+              <strong>{deleteTarget?.supplier_name ?? "proveedor desconocido"}</strong> por{" "}
+              <strong>{deleteTarget ? money(Number(deleteTarget.amount)) : ""}</strong>.
+              {deleteTarget && deleteTarget.items.length > 0 && " Se revertirá el stock que había ingresado."} Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={removePayable.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                if (deleteTarget) removePayable.mutate(deleteTarget.id);
+              }}
+            >
+              {removePayable.isPending ? "Eliminando…" : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
 
-function SupplierDetailDialog({ group, onClose }: { group: PayableGroup | null; onClose: () => void }) {
+function SupplierDetailDialog({
+  group,
+  onClose,
+  onEdit,
+  onDelete,
+}: {
+  group: PayableGroup | null;
+  onClose: () => void;
+  onEdit: (p: Payable) => void;
+  onDelete: (p: Payable) => void;
+}) {
   const payableIds = group?.payables.map((p) => p.id) ?? [];
   const results = useQueries({
     queries: payableIds.map((id) => ({
@@ -434,6 +640,25 @@ function SupplierDetailDialog({ group, onClose }: { group: PayableGroup | null; 
                     <p className="text-xs text-muted-foreground">Cargando…</p>
                   ) : (
                     <>
+                      <div className="flex gap-2">
+                        {payable.items.length === 0 ? (
+                          <Button variant="outline" size="sm" onClick={() => onEdit(payable)}>
+                            <Pencil className="h-3.5 w-3.5 mr-1.5" /> Editar
+                          </Button>
+                        ) : (
+                          <span className="text-xs text-muted-foreground self-center">
+                            Es una compra — edítala desde Compras.
+                          </span>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-destructive hover:text-destructive"
+                          onClick={() => onDelete(payable)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Eliminar
+                        </Button>
+                      </div>
                       {payable.items.length > 0 && (
                         <div>
                           <div className="text-xs font-medium mb-1 text-muted-foreground">Productos</div>

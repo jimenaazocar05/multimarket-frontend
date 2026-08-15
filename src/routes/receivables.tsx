@@ -1,18 +1,29 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet } from "@/lib/api";
-import type { Receivable, Sale, Customer } from "@/lib/api";
+import type { Sale, Customer, Product } from "@/lib/api";
+import { updateSale, deleteSale, registerPayment } from "@/lib/data";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, SortableHead } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { HandCoins, Eye } from "lucide-react";
-import { money, bolivares, formatDate } from "@/lib/format";
-import { registerPayment } from "@/lib/data";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
+import { HandCoins, Eye, Pencil, Trash2, Search, ShoppingBag, X } from "lucide-react";
+import { money, bolivares, formatDate, daysBetween } from "@/lib/format";
 import { useTableSort } from "@/lib/sort";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -38,27 +49,29 @@ type ReceivableGroup = {
   balance: number;
   days_old: number;
   oldest_date: string;
-  sales: Receivable[];
+  sales: Sale[];
 };
 
-function groupByCustomer(data: Receivable[]): ReceivableGroup[] {
+function groupByCustomer(data: Sale[]): ReceivableGroup[] {
   const map = new Map<string, ReceivableGroup>();
-  for (const r of data) {
-    const key = r.customer_id ?? `sale:${r.id}`;
+  const today = new Date();
+  for (const s of data) {
+    const key = s.customer_id ?? `sale:${s.id}`;
     let g = map.get(key);
     if (!g) {
       g = {
-        key, customer_id: r.customer_id, customer_name: r.customer_name,
-        total: 0, amount_paid: 0, balance: 0, days_old: 0, oldest_date: r.sale_date, sales: [],
+        key, customer_id: s.customer_id, customer_name: s.customer_name,
+        total: 0, amount_paid: 0, balance: 0, days_old: 0, oldest_date: s.sale_date, sales: [],
       };
       map.set(key, g);
     }
-    g.total += Number(r.total);
-    g.amount_paid += Number(r.amount_paid);
-    g.balance += r.balance;
-    g.days_old = Math.max(g.days_old, r.days_old);
-    if (r.sale_date < g.oldest_date) g.oldest_date = r.sale_date;
-    g.sales.push(r);
+    const balance = Number(s.total) - Number(s.amount_paid);
+    g.total += Number(s.total);
+    g.amount_paid += Number(s.amount_paid);
+    g.balance += balance;
+    g.days_old = Math.max(g.days_old, daysBetween(today, new Date(s.sale_date)));
+    if (s.sale_date < g.oldest_date) g.oldest_date = s.sale_date;
+    g.sales.push(s);
   }
   for (const g of map.values()) g.sales.sort((a, b) => a.sale_date.localeCompare(b.sale_date));
   return Array.from(map.values());
@@ -66,6 +79,25 @@ function groupByCustomer(data: Receivable[]): ReceivableGroup[] {
 
 const RATE_KEY = "mm_usd_ves_rate";
 const loadRate = () => (typeof window === "undefined" ? "" : window.localStorage.getItem(RATE_KEY) ?? "");
+
+type CartItem = {
+  product_id: string;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  unit_cost: number;
+};
+
+type EditForm = {
+  id: string;
+  customerId: string | null;
+  customerName: string | null;
+  customerQuery: string;
+  status: "paid" | "credit";
+  saleDate: string;
+  notes: string;
+  cart: CartItem[];
+};
 
 function Receivables() {
   const qc = useQueryClient();
@@ -75,7 +107,12 @@ function Receivables() {
   const [q, setQ] = useState("");
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "credit">("all");
   const [rate, setRate] = useState<string>(loadRate);
+
+  const [editing, setEditing] = useState<EditForm | null>(null);
+  const [productQuery, setProductQuery] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Sale | null>(null);
 
   const rateNum = Number(rate) || 0;
   const bs = (usd: number) => bolivares(usd * rateNum);
@@ -85,13 +122,27 @@ function Receivables() {
     if (typeof window !== "undefined") window.localStorage.setItem(RATE_KEY, v);
   };
 
-  const { data = [] } = useQuery({
-    queryKey: ["receivables"],
-    queryFn: () => apiGet<Receivable[]>("/api/receivables"),
+  const { data: allSales = [] } = useQuery({
+    queryKey: ["sales-for-receivables"],
+    queryFn: () => apiGet<Sale[]>("/api/sales"),
   });
+
+  // Una venta es "cuenta por cobrar" si sigue fiada, o si en algún momento
+  // lo estuvo (tiene abonos registrados) aunque ya se haya saldado del todo:
+  // al pagarse por completo el backend le cambia el status a "paid", por lo
+  // que el status solo no alcanza para distinguirla de una venta de mostrador.
+  const data = useMemo(
+    () => allSales.filter((s) => s.status === "credit" || (s.payments && s.payments.length > 0)),
+    [allSales],
+  );
   const { data: customers = [] } = useQuery({
     queryKey: ["customers"],
     queryFn: () => apiGet<Customer[]>("/api/customers"),
+  });
+  const { data: products = [] } = useQuery({
+    queryKey: ["products"],
+    queryFn: () => apiGet<Product[]>("/api/products"),
+    enabled: !!editing,
   });
 
   const phoneByCustomerId = useMemo(() => {
@@ -102,15 +153,23 @@ function Receivables() {
 
   const dateFiltered = useMemo(() => {
     if (!dateFrom && !dateTo) return data;
-    return data.filter((r) => {
-      const d = r.sale_date.slice(0, 10);
+    return data.filter((s) => {
+      const d = s.sale_date.slice(0, 10);
       if (dateFrom && d < dateFrom) return false;
       if (dateTo && d > dateTo) return false;
       return true;
     });
   }, [data, dateFrom, dateTo]);
 
-  const groups = useMemo(() => groupByCustomer(dateFiltered), [dateFiltered]);
+  const statusFiltered = useMemo(() => {
+    if (statusFilter === "all") return dateFiltered;
+    return dateFiltered.filter((s) => {
+      const balance = Number(s.total) - Number(s.amount_paid);
+      return statusFilter === "paid" ? balance <= 0.001 : balance > 0.001;
+    });
+  }, [dateFiltered, statusFilter]);
+
+  const groups = useMemo(() => groupByCustomer(statusFiltered), [statusFiltered]);
 
   const filteredGroups = useMemo(() => {
     if (!q.trim()) return groups;
@@ -123,7 +182,87 @@ function Receivables() {
 
   const { sorted, sortKey, sortOrder, handleSort } = useTableSort(filteredGroups, "customer_name", "asc");
 
-  const totalOwed = data.reduce((s, r) => s + r.balance, 0);
+  const totalOwed = statusFiltered.reduce((s, r) => s + (Number(r.total) - Number(r.amount_paid)), 0);
+  const totalPaid = statusFiltered.reduce((s, r) => s + Number(r.amount_paid), 0);
+
+  const productResults = useMemo(() => {
+    if (!productQuery.trim()) return [];
+    const qq = productQuery.toLowerCase();
+    return products.filter((p) => p.name.toLowerCase().includes(qq)).slice(0, 8);
+  }, [productQuery, products]);
+
+  const customerResults = useMemo(() => {
+    if (!editing || !editing.customerQuery.trim()) return [];
+    const qq = editing.customerQuery.toLowerCase();
+    return customers.filter((c) => c.name.toLowerCase().includes(qq)).slice(0, 6);
+  }, [editing, customers]);
+
+  const openEdit = (sale: Sale) => {
+    setEditing({
+      id: sale.id,
+      customerId: sale.customer_id,
+      customerName: sale.customer_name,
+      customerQuery: "",
+      status: sale.status,
+      saleDate: sale.sale_date.slice(0, 10),
+      notes: sale.notes ?? "",
+      cart: (sale.items ?? [])
+        .filter((i) => i.product_id)
+        .map((i) => ({
+          product_id: i.product_id as string,
+          product_name: i.product_name,
+          quantity: Number(i.quantity),
+          unit_price: Number(i.unit_price),
+          unit_cost: Number(i.unit_cost),
+        })),
+    });
+    setProductQuery("");
+  };
+
+  const addToEditCart = (p: Product) => {
+    setEditing((f) => {
+      if (!f) return f;
+      const idx = f.cart.findIndex((i) => i.product_id === p.id);
+      if (idx >= 0) {
+        const copy = [...f.cart];
+        copy[idx] = { ...copy[idx], quantity: copy[idx].quantity + 1 };
+        return { ...f, cart: copy };
+      }
+      return { ...f, cart: [...f.cart, { product_id: p.id, product_name: p.name, quantity: 1, unit_price: Number(p.price), unit_cost: Number(p.cost) }] };
+    });
+    setProductQuery("");
+  };
+
+  const editTotal = editing ? editing.cart.reduce((s, i) => s + i.quantity * i.unit_price, 0) : 0;
+
+  const saveEdit = useMutation({
+    mutationFn: async (f: EditForm) => {
+      if (f.cart.length === 0) throw new Error("Agrega al menos un producto.");
+      if (f.status === "credit" && !f.customerId) throw new Error("Elige un cliente para ventas fiadas.");
+      await updateSale(f.id, {
+        customer_id: f.customerId,
+        customer_name: f.customerName,
+        status: f.status,
+        sale_date: f.saleDate ? `${f.saleDate}T12:00:00Z` : null,
+        notes: f.notes || null,
+        items: f.cart.map((i) => ({
+          product_id: i.product_id,
+          product_name: i.product_name,
+          quantity: i.quantity,
+          unit_price: i.unit_price,
+          unit_cost: i.unit_cost,
+        })),
+      });
+    },
+    onSuccess: () => { toast.success("Venta actualizada"); setEditing(null); qc.invalidateQueries(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const removeSale = useMutation({
+    mutationFn: (id: string) => deleteSale(id),
+    onSuccess: () => { toast.success("Venta eliminada"); setDeleteTarget(null); qc.invalidateQueries(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
 
   const pay = useMutation({
     mutationFn: async () => {
@@ -135,7 +274,8 @@ function Receivables() {
       let remainingCents = Math.round(v * 100);
       for (const sale of paying.sales) {
         if (remainingCents <= 0) break;
-        const saleCents = Math.round(sale.balance * 100);
+        const balance = Number(sale.total) - Number(sale.amount_paid);
+        const saleCents = Math.round(balance * 100);
         const applyCents = Math.min(remainingCents, saleCents);
         if (applyCents > 0) {
           await registerPayment({ kind: "receivable", sale_id: sale.id, amount: applyCents / 100 });
@@ -152,7 +292,7 @@ function Receivables() {
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Cuentas por cobrar</h1>
-          <p className="text-sm text-muted-foreground">{data.length} facturas fiadas pendientes.</p>
+          <p className="text-sm text-muted-foreground">{data.filter((s) => Number(s.total) - Number(s.amount_paid) > 0.001).length} facturas fiadas pendientes.</p>
         </div>
         <div className="flex flex-col gap-3 w-full sm:flex-row sm:flex-wrap sm:items-end sm:w-auto">
           <Input placeholder="Buscar por nombre o teléfono…" value={q} onChange={(e) => setQ(e.target.value)} className="w-full sm:w-56" />
@@ -171,12 +311,35 @@ function Receivables() {
               value={rate} onChange={(e) => updateRate(e.target.value)}
             />
           </div>
-          <Card className="w-full sm:min-w-56"><CardContent className="pt-4">
-            <div className="text-xs uppercase text-muted-foreground">Total por cobrar</div>
-            <div className="text-2xl font-semibold tabular-nums text-destructive">{money(totalOwed)}</div>
-            {rateNum > 0 && <div className="text-sm text-muted-foreground tabular-nums">{bs(totalOwed)}</div>}
-          </CardContent></Card>
+          <div className="flex gap-3 w-full sm:w-auto">
+            <Card className="flex-1 sm:min-w-40"><CardContent className="pt-4">
+              <div className="text-xs uppercase text-muted-foreground">Total por cobrar</div>
+              <div className="text-2xl font-semibold tabular-nums text-destructive">{money(totalOwed)}</div>
+              {rateNum > 0 && <div className="text-sm text-muted-foreground tabular-nums">{bs(totalOwed)}</div>}
+            </CardContent></Card>
+            <Card className="flex-1 sm:min-w-40"><CardContent className="pt-4">
+              <div className="text-xs uppercase text-muted-foreground">Total cobrado</div>
+              <div className="text-2xl font-semibold tabular-nums text-success">{money(totalPaid)}</div>
+              {rateNum > 0 && <div className="text-sm text-muted-foreground tabular-nums">{bs(totalPaid)}</div>}
+            </CardContent></Card>
+          </div>
         </div>
+      </div>
+
+      <div className="flex gap-2">
+        {(["all", "credit", "paid"] as const).map((s) => (
+          <button
+            key={s}
+            onClick={() => setStatusFilter(s)}
+            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors border ${
+              statusFilter === s
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-card text-muted-foreground border-border hover:bg-accent"
+            }`}
+          >
+            {s === "all" ? "Todas" : s === "credit" ? "Por cobrar" : "Pagada"}
+          </button>
+        ))}
       </div>
 
       <Card>
@@ -194,9 +357,10 @@ function Receivables() {
             <TableBody>
               {sorted.map((g) => {
                 const isOverdue = g.days_old > 7;
+                const isPaid = g.balance <= 0.001;
                 return (
                   <TableRow key={g.key}>
-                    <TableCell className={cn("hidden md:table-cell text-xs", isOverdue && "text-destructive font-semibold")}>{formatDate(g.oldest_date)}</TableCell>
+                    <TableCell className={cn("hidden md:table-cell text-xs", isOverdue && !isPaid && "text-destructive font-semibold")}>{formatDate(g.oldest_date)}</TableCell>
                     <TableCell className="font-medium">
                       {g.customer_name || "—"}
                       {g.sales.length > 1 && (
@@ -216,18 +380,24 @@ function Receivables() {
                       {rateNum > 0 && <div className="text-xs font-normal text-muted-foreground">{bs(g.balance)}</div>}
                     </TableCell>
                     <TableCell className="hidden sm:table-cell">
-                      <Badge variant={g.days_old > 30 ? "destructive" : g.days_old > 15 ? "secondary" : "outline"}>
-                        {g.days_old} d
-                      </Badge>
+                      {isPaid ? (
+                        <Badge variant="default">Pagada</Badge>
+                      ) : (
+                        <Badge variant={g.days_old > 30 ? "destructive" : g.days_old > 15 ? "secondary" : "outline"}>
+                          {g.days_old} d
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-1">
                         <Button variant="ghost" size="icon" onClick={() => setViewing(g)} title="Ver detalle">
                           <Eye className="h-4 w-4" />
                         </Button>
-                        <Button size="sm" variant="outline" onClick={() => setPaying(g)}>
-                          <HandCoins className="h-4 w-4 mr-1" /> Abonar
-                        </Button>
+                        {!isPaid && (
+                          <Button size="sm" variant="outline" onClick={() => setPaying(g)}>
+                            <HandCoins className="h-4 w-4 mr-1" /> Abonar
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -275,21 +445,215 @@ function Receivables() {
         </DialogContent>
       </Dialog>
 
-      <CustomerDetailDialog group={viewing} onClose={() => setViewing(null)} rateNum={rateNum} />
+      <CustomerDetailDialog
+        group={viewing}
+        onClose={() => setViewing(null)}
+        rateNum={rateNum}
+        onEdit={(s) => { setViewing(null); openEdit(s); }}
+        onDelete={(s) => { setViewing(null); setDeleteTarget(s); }}
+      />
+
+      {/* ── Edit sale dialog ── */}
+      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Editar venta</DialogTitle></DialogHeader>
+          {editing && (
+            <div className="grid gap-4">
+              <div>
+                <Label>Cliente</Label>
+                {editing.customerId || editing.customerName ? (
+                  <div className="flex items-center justify-between border rounded-md px-3 py-2 mt-1">
+                    <div className="text-sm font-medium">{editing.customerName || "Venta de mostrador"}</div>
+                    <Button
+                      variant="ghost" size="icon" className="h-7 w-7"
+                      onClick={() => setEditing({ ...editing, customerId: null, customerName: null })}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <Input
+                      placeholder="Venta de mostrador (buscar cliente)…"
+                      value={editing.customerQuery}
+                      onChange={(e) => setEditing({ ...editing, customerQuery: e.target.value })}
+                      className="mt-1"
+                    />
+                    {editing.customerQuery.trim() && (
+                      <div className="border rounded-md divide-y max-h-48 overflow-auto mt-1">
+                        {customerResults.map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => setEditing({ ...editing, customerId: c.id, customerName: c.name, customerQuery: "" })}
+                            className="w-full text-left px-3 py-2 hover:bg-accent text-sm"
+                          >
+                            <div className="font-medium">{c.name}</div>
+                            {c.phone && <div className="text-xs text-muted-foreground">{c.phone}</div>}
+                          </button>
+                        ))}
+                        {customerResults.length === 0 && (
+                          <div className="px-3 py-2 text-sm text-muted-foreground">Sin resultados.</div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div>
+                <Label>Estado</Label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <Button
+                    type="button" variant={editing.status === "paid" ? "default" : "outline"}
+                    onClick={() => setEditing({ ...editing, status: "paid" })}
+                  >
+                    Pagado
+                  </Button>
+                  <Button
+                    type="button" variant={editing.status === "credit" ? "default" : "outline"}
+                    onClick={() => setEditing({ ...editing, status: "credit" })}
+                  >
+                    Fiado
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div><Label>Fecha de venta</Label><Input type="date" value={editing.saleDate} onChange={(e) => setEditing({ ...editing, saleDate: e.target.value })} /></div>
+              </div>
+
+              <div><Label>Notas</Label><Textarea rows={2} value={editing.notes} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} /></div>
+
+              <div className="border-t pt-3">
+                <Label className="mb-1.5 block">Buscar producto</Label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Nombre…"
+                    value={productQuery}
+                    onChange={(e) => setProductQuery(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                {productQuery.trim() && (
+                  <div className="border rounded-md divide-y max-h-48 overflow-auto mt-1">
+                    {productResults.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => addToEditCart(p)}
+                        className="w-full text-left px-3 py-2 hover:bg-accent flex justify-between items-center"
+                      >
+                        <div className="font-medium text-sm">{p.name}</div>
+                        <div className="text-sm tabular-nums">{money(Number(p.price))}</div>
+                      </button>
+                    ))}
+                    {productResults.length === 0 && (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">Sin resultados.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <ShoppingBag className="h-4 w-4" />
+                  <span className="font-medium text-sm">Productos ({editing.cart.length})</span>
+                </div>
+                {editing.cart.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-6 text-center">Agrega al menos un producto.</p>
+                ) : (
+                  editing.cart.map((i, idx) => (
+                    <div key={i.product_id} className="grid grid-cols-[1fr_80px_100px_40px] gap-2 items-center">
+                      <div className="min-w-0 text-sm font-medium truncate">{i.product_name}</div>
+                      <Input
+                        type="number" min="0" step="0.5" value={i.quantity}
+                        onChange={(e) => {
+                          const v = Number(e.target.value) || 0;
+                          setEditing((f) => f && { ...f, cart: f.cart.map((it, k) => k === idx ? { ...it, quantity: v } : it) });
+                        }}
+                        className="h-8"
+                      />
+                      <Input
+                        type="number" min="0" step="0.01" value={i.unit_price}
+                        onChange={(e) => {
+                          const v = Number(e.target.value) || 0;
+                          setEditing((f) => f && { ...f, cart: f.cart.map((it, k) => k === idx ? { ...it, unit_price: v } : it) });
+                        }}
+                        className="h-8"
+                      />
+                      <Button
+                        variant="ghost" size="icon" className="h-8 w-8"
+                        onClick={() => setEditing((f) => f && { ...f, cart: f.cart.filter((_, k) => k !== idx) })}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="border-t pt-3 flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Total</span>
+                <span className="text-xl font-bold tabular-nums">{money(editTotal)}</span>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditing(null)}>Cancelar</Button>
+            <Button onClick={() => editing && saveEdit.mutate(editing)} disabled={saveEdit.isPending}>
+              {saveEdit.isPending ? "Guardando…" : "Guardar cambios"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete confirmation ── */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar esta venta?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminará la venta a{" "}
+              <strong>{deleteTarget?.customer_name ?? "venta de mostrador"}</strong> por{" "}
+              <strong>{deleteTarget ? money(Number(deleteTarget.total)) : ""}</strong> y se revertirá el
+              stock descontado. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={removeSale.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                if (deleteTarget) removeSale.mutate(deleteTarget.id);
+              }}
+            >
+              {removeSale.isPending ? "Eliminando…" : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
 
-function CustomerDetailDialog({ group, onClose, rateNum }: { group: ReceivableGroup | null; onClose: () => void; rateNum: number }) {
+function CustomerDetailDialog({
+  group,
+  onClose,
+  rateNum,
+  onEdit,
+  onDelete,
+}: {
+  group: ReceivableGroup | null;
+  onClose: () => void;
+  rateNum: number;
+  onEdit: (sale: Sale) => void;
+  onDelete: (sale: Sale) => void;
+}) {
   const bs = (usd: number) => bolivares(usd * rateNum);
-  const saleIds = group?.sales.map((s) => s.id) ?? [];
-  const results = useQueries({
-    queries: saleIds.map((id) => ({
-      queryKey: ["sale-detail", id],
-      queryFn: () => apiGet<Sale>(`/api/sales/${id}`),
-      enabled: !!group,
-    })),
-  });
 
   return (
     <Dialog open={!!group} onOpenChange={(o) => !o && onClose()}>
@@ -297,37 +661,46 @@ function CustomerDetailDialog({ group, onClose, rateNum }: { group: ReceivableGr
         <DialogHeader><DialogTitle>{group?.customer_name || "Cliente"}</DialogTitle></DialogHeader>
         {group && (
           <div className="space-y-4 max-h-[60vh] overflow-auto">
-            {group.sales.map((summary, idx) => {
-              const sale = results[idx]?.data;
-              const isOverdue = summary.days_old > 7;
+            {group.sales.map((sale) => {
+              const balance = Number(sale.total) - Number(sale.amount_paid);
+              const isOverdue = balance > 0.001 && daysBetween(new Date(), new Date(sale.sale_date)) > 7;
               return (
-                <div key={summary.id} className="border rounded-md p-3 space-y-3">
+                <div key={sale.id} className="border rounded-md p-3 space-y-3">
                   <div className="flex items-center justify-between text-sm">
                     <span className={cn("font-medium", isOverdue && "text-destructive font-semibold")}>
-                      {formatDate(summary.sale_date)}
+                      {formatDate(sale.sale_date)}
                     </span>
                     <span className="tabular-nums text-muted-foreground text-right">
-                      Total {money(Number(summary.total))} · Saldo <strong className="text-foreground">{money(summary.balance)}</strong>
+                      Total {money(Number(sale.total))} · Saldo <strong className="text-foreground">{money(balance)}</strong>
                       {rateNum > 0 && (
-                        <><br /><span className="text-xs">{bs(Number(summary.total))} · {bs(summary.balance)}</span></>
+                        <><br /><span className="text-xs">{bs(Number(sale.total))} · {bs(balance)}</span></>
                       )}
                     </span>
                   </div>
-                  {!sale ? (
-                    <p className="text-xs text-muted-foreground">Cargando…</p>
-                  ) : (
-                    <>
-                      <div>
-                        <div className="text-xs font-medium mb-1 text-muted-foreground">Productos</div>
-                        <SaleItemsTable items={sale.items} />
-                      </div>
 
-                      <div>
-                        <div className="text-xs font-medium mb-1 text-muted-foreground">Abonos</div>
-                        <SalePaymentsTable payments={sale.payments} rateNum={rateNum} bs={bs} />
-                      </div>
-                    </>
-                  )}
+                  <div className="flex gap-2">
+                    <Button variant="outline" size="sm" onClick={() => onEdit(sale)}>
+                      <Pencil className="h-3.5 w-3.5 mr-1.5" /> Editar
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => onDelete(sale)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Eliminar
+                    </Button>
+                  </div>
+
+                  <div>
+                    <div className="text-xs font-medium mb-1 text-muted-foreground">Productos</div>
+                    <SaleItemsTable items={sale.items} />
+                  </div>
+
+                  <div>
+                    <div className="text-xs font-medium mb-1 text-muted-foreground">Abonos</div>
+                    <SalePaymentsTable payments={sale.payments} rateNum={rateNum} bs={bs} />
+                  </div>
                 </div>
               );
             })}
