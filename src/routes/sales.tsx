@@ -1,23 +1,43 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet } from "@/lib/api";
-import type { Sale } from "@/lib/api";
+import type { Product, Customer, Sale } from "@/lib/api";
+import { updateSale, deleteSale } from "@/lib/data";
 import { money, formatDate } from "@/lib/format";
 import {
   Calendar,
-  ChevronDown,
-  ChevronUp,
+  Eye,
   ShoppingBag,
   TrendingUp,
   DollarSign,
   CreditCard,
   Search,
   Receipt,
+  Pencil,
+  Trash2,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, SortableHead } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
+import { useTableSort } from "@/lib/sort";
+import { toast } from "sonner";
 
 export const Route = createFileRoute("/sales")({
   head: () => ({
@@ -37,18 +57,140 @@ function today(): string {
   return `${d.getFullYear()}-${mm}-${dd}`;
 }
 
+type CartItem = {
+  product_id: string;
+  product_name: string;
+  quantity: number;
+  unit_price: number;
+  unit_cost: number;
+};
+
+type EditForm = {
+  id: string;
+  customerId: string | null;
+  customerName: string | null;
+  customerQuery: string;
+  status: "paid" | "credit";
+  saleDate: string;
+  notes: string;
+  cart: CartItem[];
+};
+
 function SalesPage() {
   const t = today();
+  const qc = useQueryClient();
   const [from, setFrom] = useState(t);
   const [to, setTo] = useState(t);
   const [search, setSearch] = useState("");
-  const [expanded, setExpanded] = useState<string | null>(null);
+  const [viewing, setViewing] = useState<Sale | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "credit">("all");
+
+  const [editing, setEditing] = useState<EditForm | null>(null);
+  const [productQuery, setProductQuery] = useState("");
+  const [deleteTarget, setDeleteTarget] = useState<Sale | null>(null);
 
   const { data: sales = [], isLoading, isError } = useQuery({
     queryKey: ["sales", from, to],
     queryFn: () => apiGet<Sale[]>(`/api/sales?from=${from}&to=${to}`),
     enabled: !!from && !!to,
+  });
+
+  const { data: products = [] } = useQuery({
+    queryKey: ["products"],
+    queryFn: () => apiGet<Product[]>("/api/products"),
+    enabled: !!editing,
+  });
+  const { data: customers = [] } = useQuery({
+    queryKey: ["customers"],
+    queryFn: () => apiGet<Customer[]>("/api/customers"),
+    enabled: !!editing,
+  });
+
+  const productResults = useMemo(() => {
+    if (!productQuery.trim()) return [];
+    const q = productQuery.toLowerCase();
+    return products.filter((p) => p.name.toLowerCase().includes(q)).slice(0, 8);
+  }, [productQuery, products]);
+
+  const customerResults = useMemo(() => {
+    if (!editing || !editing.customerQuery.trim()) return [];
+    const q = editing.customerQuery.toLowerCase();
+    return customers.filter((c) => c.name.toLowerCase().includes(q)).slice(0, 6);
+  }, [editing, customers]);
+
+  const openEdit = (sale: Sale) => {
+    setEditing({
+      id: sale.id,
+      customerId: sale.customer_id,
+      customerName: sale.customer_name,
+      customerQuery: "",
+      status: sale.status,
+      saleDate: sale.sale_date.slice(0, 10),
+      notes: sale.notes ?? "",
+      cart: (sale.items ?? [])
+        .filter((i) => i.product_id)
+        .map((i) => ({
+          product_id: i.product_id as string,
+          product_name: i.product_name,
+          quantity: Number(i.quantity),
+          unit_price: Number(i.unit_price),
+          unit_cost: Number(i.unit_cost),
+        })),
+    });
+    setProductQuery("");
+  };
+
+  const addToEditCart = (p: Product) => {
+    setEditing((f) => {
+      if (!f) return f;
+      const idx = f.cart.findIndex((i) => i.product_id === p.id);
+      if (idx >= 0) {
+        const copy = [...f.cart];
+        copy[idx] = { ...copy[idx], quantity: copy[idx].quantity + 1 };
+        return { ...f, cart: copy };
+      }
+      return { ...f, cart: [...f.cart, { product_id: p.id, product_name: p.name, quantity: 1, unit_price: Number(p.price), unit_cost: Number(p.cost) }] };
+    });
+    setProductQuery("");
+  };
+
+  const editTotal = editing ? editing.cart.reduce((s, i) => s + i.quantity * i.unit_price, 0) : 0;
+
+  const saveEdit = useMutation({
+    mutationFn: async (f: EditForm) => {
+      if (f.cart.length === 0) throw new Error("Agrega al menos un producto.");
+      if (f.status === "credit" && !f.customerId) throw new Error("Elige un cliente para ventas fiadas.");
+      await updateSale(f.id, {
+        customer_id: f.customerId,
+        customer_name: f.customerName,
+        status: f.status,
+        sale_date: f.saleDate ? `${f.saleDate}T12:00:00Z` : null,
+        notes: f.notes || null,
+        items: f.cart.map((i) => ({
+          product_id: i.product_id,
+          product_name: i.product_name,
+          quantity: i.quantity,
+          unit_price: i.unit_price,
+          unit_cost: i.unit_cost,
+        })),
+      });
+    },
+    onSuccess: () => {
+      toast.success("Venta actualizada");
+      setEditing(null);
+      qc.invalidateQueries();
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const removeSale = useMutation({
+    mutationFn: (id: string) => deleteSale(id),
+    onSuccess: () => {
+      toast.success("Venta eliminada");
+      setDeleteTarget(null);
+      qc.invalidateQueries();
+    },
+    onError: (e: Error) => toast.error(e.message),
   });
 
   const filtered = useMemo(() => {
@@ -207,14 +349,12 @@ function SalesPage() {
               </div>
 
               {filtered.map((sale) => {
-                const isOpen = expanded === sale.id;
-                const balance = Number(sale.total) - Number(sale.amount_paid);
                 return (
                   <div key={sale.id}>
                     {/* Row */}
                     <button
                       id={`sale-row-${sale.id}`}
-                      onClick={() => setExpanded(isOpen ? null : sale.id)}
+                      onClick={() => setViewing(sale)}
                       className="w-full text-left hover:bg-accent/50 transition-colors"
                     >
                       <div className="grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_140px_120px_100px_90px_40px] gap-4 px-5 py-3.5 items-center">
@@ -262,85 +402,10 @@ function SalesPage() {
                         </div>
 
                         <div className="flex justify-center text-muted-foreground">
-                          {isOpen ? (
-                            <ChevronUp className="h-4 w-4" />
-                          ) : (
-                            <ChevronDown className="h-4 w-4" />
-                          )}
+                          <Eye className="h-4 w-4" />
                         </div>
                       </div>
                     </button>
-
-                    {/* Expanded detail */}
-                    {isOpen && (
-                      <div className="border-t bg-muted/30 px-5 py-4 space-y-4">
-                        <div className="flex flex-wrap gap-x-8 gap-y-2 text-sm">
-                          <div>
-                            <span className="text-muted-foreground">Fecha: </span>
-                            <span className="font-medium">{formatDate(sale.sale_date)}</span>
-                          </div>
-                          {sale.notes && (
-                            <div>
-                              <span className="text-muted-foreground">Notas: </span>
-                              <span>{sale.notes}</span>
-                            </div>
-                          )}
-                          {balance > 0 && (
-                            <div>
-                              <span className="text-muted-foreground">Pendiente: </span>
-                              <span className="font-medium text-warning">{money(balance)}</span>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Items table */}
-                        {sale.items && sale.items.length > 0 && (
-                          <div>
-                            <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                              Productos
-                            </div>
-                            <div className="rounded-md border overflow-hidden">
-                              <table className="w-full text-sm">
-                                <thead>
-                                  <tr className="bg-muted/50 text-xs text-muted-foreground">
-                                    <th className="text-left px-3 py-2">Producto</th>
-                                    <th className="text-right px-3 py-2">Cant.</th>
-                                    <th className="text-right px-3 py-2">P. Unit.</th>
-                                    <th className="text-right px-3 py-2">Subtotal</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y">
-                                  {sale.items.map((item) => (
-                                    <tr key={item.id} className="bg-card">
-                                      <td className="px-3 py-2 font-medium">{item.product_name}</td>
-                                      <td className="px-3 py-2 text-right tabular-nums">
-                                        {Number(item.quantity)}
-                                      </td>
-                                      <td className="px-3 py-2 text-right tabular-nums">
-                                        {money(Number(item.unit_price))}
-                                      </td>
-                                      <td className="px-3 py-2 text-right tabular-nums font-medium">
-                                        {money(Number(item.subtotal))}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                                <tfoot>
-                                  <tr className="bg-muted/30 font-semibold text-sm">
-                                    <td colSpan={3} className="px-3 py-2 text-right">
-                                      Total
-                                    </td>
-                                    <td className="px-3 py-2 text-right tabular-nums">
-                                      {money(Number(sale.total))}
-                                    </td>
-                                  </tr>
-                                </tfoot>
-                              </table>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )}
                   </div>
                 );
               })}
@@ -348,7 +413,319 @@ function SalesPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* ── Detail dialog ── */}
+      <SaleDetailDialog
+        sale={viewing}
+        onClose={() => setViewing(null)}
+        onEdit={(s) => { setViewing(null); openEdit(s); }}
+        onDelete={(s) => { setViewing(null); setDeleteTarget(s); }}
+      />
+
+      {/* ── Edit dialog ── */}
+      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+          <DialogHeader><DialogTitle>Editar venta</DialogTitle></DialogHeader>
+          {editing && (
+            <div className="grid gap-4">
+              <div>
+                <Label>Cliente</Label>
+                {editing.customerId || editing.customerName ? (
+                  <div className="flex items-center justify-between border rounded-md px-3 py-2 mt-1">
+                    <div className="text-sm font-medium">{editing.customerName || "Venta de mostrador"}</div>
+                    <Button
+                      variant="ghost" size="icon" className="h-7 w-7"
+                      onClick={() => setEditing({ ...editing, customerId: null, customerName: null })}
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    <Input
+                      placeholder="Venta de mostrador (buscar cliente)…"
+                      value={editing.customerQuery}
+                      onChange={(e) => setEditing({ ...editing, customerQuery: e.target.value })}
+                      className="mt-1"
+                    />
+                    {editing.customerQuery.trim() && (
+                      <div className="border rounded-md divide-y max-h-48 overflow-auto mt-1">
+                        {customerResults.map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => setEditing({ ...editing, customerId: c.id, customerName: c.name, customerQuery: "" })}
+                            className="w-full text-left px-3 py-2 hover:bg-accent text-sm"
+                          >
+                            <div className="font-medium">{c.name}</div>
+                            {c.phone && <div className="text-xs text-muted-foreground">{c.phone}</div>}
+                          </button>
+                        ))}
+                        {customerResults.length === 0 && (
+                          <div className="px-3 py-2 text-sm text-muted-foreground">Sin resultados.</div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+
+              <div>
+                <Label>Estado</Label>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <Button
+                    type="button" variant={editing.status === "paid" ? "default" : "outline"}
+                    onClick={() => setEditing({ ...editing, status: "paid" })}
+                  >
+                    Pagado
+                  </Button>
+                  <Button
+                    type="button" variant={editing.status === "credit" ? "default" : "outline"}
+                    onClick={() => setEditing({ ...editing, status: "credit" })}
+                  >
+                    Fiado
+                  </Button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div><Label>Fecha de venta</Label><Input type="date" value={editing.saleDate} onChange={(e) => setEditing({ ...editing, saleDate: e.target.value })} /></div>
+              </div>
+
+              <div><Label>Notas</Label><Textarea rows={2} value={editing.notes} onChange={(e) => setEditing({ ...editing, notes: e.target.value })} /></div>
+
+              <div className="border-t pt-3">
+                <Label className="mb-1.5 block">Buscar producto</Label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Nombre…"
+                    value={productQuery}
+                    onChange={(e) => setProductQuery(e.target.value)}
+                    className="pl-9"
+                  />
+                </div>
+                {productQuery.trim() && (
+                  <div className="border rounded-md divide-y max-h-48 overflow-auto mt-1">
+                    {productResults.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => addToEditCart(p)}
+                        className="w-full text-left px-3 py-2 hover:bg-accent flex justify-between items-center"
+                      >
+                        <div className="font-medium text-sm">{p.name}</div>
+                        <div className="text-sm tabular-nums">{money(Number(p.price))}</div>
+                      </button>
+                    ))}
+                    {productResults.length === 0 && (
+                      <div className="px-3 py-2 text-sm text-muted-foreground">Sin resultados.</div>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <ShoppingBag className="h-4 w-4" />
+                  <span className="font-medium text-sm">Productos ({editing.cart.length})</span>
+                </div>
+                {editing.cart.length === 0 ? (
+                  <p className="text-sm text-muted-foreground py-6 text-center">Agrega al menos un producto.</p>
+                ) : (
+                  editing.cart.map((i, idx) => (
+                    <div key={i.product_id} className="grid grid-cols-[1fr_80px_100px_40px] gap-2 items-center">
+                      <div className="min-w-0 text-sm font-medium truncate">{i.product_name}</div>
+                      <Input
+                        type="number" min="0" step="0.5" value={i.quantity}
+                        onChange={(e) => {
+                          const v = Number(e.target.value) || 0;
+                          setEditing((f) => f && { ...f, cart: f.cart.map((it, k) => k === idx ? { ...it, quantity: v } : it) });
+                        }}
+                        className="h-8"
+                      />
+                      <Input
+                        type="number" min="0" step="0.01" value={i.unit_price}
+                        onChange={(e) => {
+                          const v = Number(e.target.value) || 0;
+                          setEditing((f) => f && { ...f, cart: f.cart.map((it, k) => k === idx ? { ...it, unit_price: v } : it) });
+                        }}
+                        className="h-8"
+                      />
+                      <Button
+                        variant="ghost" size="icon" className="h-8 w-8"
+                        onClick={() => setEditing((f) => f && { ...f, cart: f.cart.filter((_, k) => k !== idx) })}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              <div className="border-t pt-3 flex justify-between items-center">
+                <span className="text-sm text-muted-foreground">Total</span>
+                <span className="text-xl font-bold tabular-nums">{money(editTotal)}</span>
+              </div>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditing(null)}>Cancelar</Button>
+            <Button onClick={() => editing && saveEdit.mutate(editing)} disabled={saveEdit.isPending}>
+              {saveEdit.isPending ? "Guardando…" : "Guardar cambios"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Delete confirmation ── */}
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar esta venta?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminará la venta a{" "}
+              <strong>{deleteTarget?.customer_name ?? "venta de mostrador"}</strong> por{" "}
+              <strong>{deleteTarget ? money(Number(deleteTarget.total)) : ""}</strong> y se revertirá el
+              stock descontado. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={removeSale.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                if (deleteTarget) removeSale.mutate(deleteTarget.id);
+              }}
+            >
+              {removeSale.isPending ? "Eliminando…" : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
+  );
+}
+
+function SaleDetailDialog({
+  sale,
+  onClose,
+  onEdit,
+  onDelete,
+}: {
+  sale: Sale | null;
+  onClose: () => void;
+  onEdit: (sale: Sale) => void;
+  onDelete: (sale: Sale) => void;
+}) {
+  const items = sale?.items ?? [];
+  const payments = sale?.payments ?? [];
+  const { sorted: sortedItems, sortKey: itemsSortKey, sortOrder: itemsSortOrder, handleSort: handleItemsSort } = useTableSort(items, "product_name", "asc");
+  const { sorted: sortedPayments, sortKey: paySortKey, sortOrder: paySortOrder, handleSort: handlePaySort } = useTableSort(payments, "payment_date", "desc");
+  const balance = sale ? Number(sale.total) - Number(sale.amount_paid) : 0;
+
+  return (
+    <Dialog open={!!sale} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl max-h-[85vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>{sale?.customer_name || "Venta de mostrador"}</DialogTitle>
+        </DialogHeader>
+        {sale && (
+          <div className="space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+              <div className="flex flex-wrap gap-x-6 gap-y-1.5 items-center">
+                <div>
+                  <span className="text-muted-foreground">Fecha: </span>
+                  <span className="font-medium">{formatDate(sale.sale_date)}</span>
+                </div>
+                <Badge variant={sale.status === "paid" ? "default" : "secondary"} className={sale.status === "credit" ? "text-warning" : ""}>
+                  {sale.status === "paid" ? "Pagado" : "Fiado"}
+                </Badge>
+              </div>
+              <div className="text-right tabular-nums">
+                <div>Total <strong>{money(Number(sale.total))}</strong></div>
+                {balance > 0 && (
+                  <div className="text-warning">Pendiente <strong>{money(balance)}</strong></div>
+                )}
+              </div>
+            </div>
+
+            {sale.notes && (
+              <p className="text-sm">
+                <span className="text-muted-foreground">Notas: </span>
+                {sale.notes}
+              </p>
+            )}
+
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => onEdit(sale)}>
+                <Pencil className="h-3.5 w-3.5 mr-1.5" /> Editar
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                className="text-destructive hover:text-destructive"
+                onClick={() => onDelete(sale)}
+              >
+                <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Eliminar
+              </Button>
+            </div>
+
+            <div>
+              <div className="text-xs font-medium mb-1 text-muted-foreground">Productos</div>
+              <Table>
+                <TableHeader><TableRow>
+                  <SortableHead sortKey="product_name" currentSort={itemsSortKey} currentOrder={itemsSortOrder} onSort={handleItemsSort} className="h-8">Producto</SortableHead>
+                  <SortableHead sortKey="quantity" currentSort={itemsSortKey} currentOrder={itemsSortOrder} onSort={handleItemsSort} align="right" className="h-8">Cant.</SortableHead>
+                  <SortableHead sortKey="unit_price" currentSort={itemsSortKey} currentOrder={itemsSortOrder} onSort={handleItemsSort} align="right" className="h-8">P. Unit.</SortableHead>
+                  <SortableHead sortKey="subtotal" currentSort={itemsSortKey} currentOrder={itemsSortOrder} onSort={handleItemsSort} align="right" className="h-8">Subtotal</SortableHead>
+                </TableRow></TableHeader>
+                <TableBody>
+                  {sortedItems.map((i) => (
+                    <TableRow key={i.id}>
+                      <TableCell className="py-1">{i.product_name}</TableCell>
+                      <TableCell className="py-1 text-right tabular-nums">{Number(i.quantity)}</TableCell>
+                      <TableCell className="py-1 text-right tabular-nums">{money(Number(i.unit_price))}</TableCell>
+                      <TableCell className="py-1 text-right tabular-nums font-medium">{money(Number(i.subtotal))}</TableCell>
+                    </TableRow>
+                  ))}
+                  {items.length === 0 && (
+                    <TableRow><TableCell colSpan={4} className="text-center text-muted-foreground py-2">Sin productos.</TableCell></TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+
+            {sale.status === "credit" && (
+              <div>
+                <div className="text-xs font-medium mb-1 text-muted-foreground">Abonos</div>
+                <Table>
+                  <TableHeader><TableRow>
+                    <SortableHead sortKey="payment_date" currentSort={paySortKey} currentOrder={paySortOrder} onSort={handlePaySort} className="h-8">Fecha</SortableHead>
+                    <SortableHead sortKey="amount" currentSort={paySortKey} currentOrder={paySortOrder} onSort={handlePaySort} align="right" className="h-8">Monto</SortableHead>
+                    <SortableHead sortKey="notes" currentSort={paySortKey} currentOrder={paySortOrder} onSort={handlePaySort} className="h-8">Nota</SortableHead>
+                  </TableRow></TableHeader>
+                  <TableBody>
+                    {sortedPayments.map((p) => (
+                      <TableRow key={p.id}>
+                        <TableCell className="py-1 text-xs">{formatDate(p.payment_date)}</TableCell>
+                        <TableCell className="py-1 text-right tabular-nums text-success">{money(Number(p.amount))}</TableCell>
+                        <TableCell className="py-1 text-xs text-muted-foreground">{p.notes || "—"}</TableCell>
+                      </TableRow>
+                    ))}
+                    {payments.length === 0 && (
+                      <TableRow><TableCell colSpan={3} className="text-center text-muted-foreground py-2">Sin abonos registrados.</TableCell></TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </div>
+        )}
+      </DialogContent>
+    </Dialog>
   );
 }
 

@@ -140,7 +140,10 @@ function CustomerHistoryDialog({ customer, onClose }: { customer: Customer | nul
     <Dialog open={!!customer} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-2xl">
         <DialogHeader><DialogTitle>{customer?.name}</DialogTitle></DialogHeader>
-        {customer?.notes && <p className="text-sm text-muted-foreground">{customer.notes}</p>}
+        <div className="text-sm text-muted-foreground space-y-1">
+          <p>Teléfono: {customer?.phone || "—"}</p>
+          {customer?.notes && <p>Notas: {customer.notes}</p>}
+        </div>
         <div className="max-h-[60vh] overflow-auto">
           <Table>
             <TableHeader><TableRow>

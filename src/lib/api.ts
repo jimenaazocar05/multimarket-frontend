@@ -29,6 +29,7 @@ export const apiPost = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: "POST", body: body !== undefined ? JSON.stringify(body) : undefined });
 export const apiPut = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: "PUT", body: body !== undefined ? JSON.stringify(body) : undefined });
+export const apiDelete = <T>(path: string) => request<T>(path, { method: "DELETE" });
 
 // --- Tipos (reflejan los schemas Pydantic de multimarket-backend/app/schemas) ---
 
@@ -162,6 +163,7 @@ export type Payable = {
   balance: number;
   due_date: string | null;
   issue_date: string;
+  notes: string | null;
   days_old: number;
   overdue: boolean;
   payments: Payment[];
@@ -174,7 +176,9 @@ export type PayableInput = {
   concept: string;
   amount: number;
   due_date?: string | null;
+  issue_date?: string | null;
   notes?: string | null;
+  is_cash?: boolean;
 };
 
 export type PurchaseItemInput = {

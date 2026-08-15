@@ -1,5 +1,5 @@
-import { apiPost } from "@/lib/api";
-import type { Payable, Receivable, Sale, SaleInput, StockAdjustmentInput, Product, PurchaseInput } from "@/lib/api";
+import { apiPost, apiPut, apiDelete } from "@/lib/api";
+import type { Payable, Receivable, Sale, SaleInput, StockAdjustmentInput, Product, PurchaseInput, PayableInput } from "@/lib/api";
 
 export type { Product, Customer, Supplier, Sale, SaleItem, Payable, InventoryMovement } from "@/lib/api";
 
@@ -9,10 +9,44 @@ export async function createSale(input: SaleInput): Promise<Sale> {
   return apiPost<Sale>("/api/sales", input);
 }
 
+/** Edita una venta existente: reemplaza sus items, revirtiendo y
+ * reaplicando el stock correspondiente en el backend. */
+export async function updateSale(id: string, input: SaleInput): Promise<Sale> {
+  return apiPut<Sale>(`/api/sales/${id}`, input);
+}
+
+/** Elimina una venta: revierte el stock descontado por sus items y
+ * borra los abonos asociados. */
+export async function deleteSale(id: string): Promise<void> {
+  return apiDelete<void>(`/api/sales/${id}`);
+}
+
 /** Registra una compra a proveedor: el backend crea la cuenta por pagar,
  * aumenta el stock de cada producto y registra el movimiento de inventario. */
 export async function createPurchase(input: PurchaseInput): Promise<Payable> {
   return apiPost<Payable>("/api/payables/purchase", input);
+}
+
+/** Edita una compra existente: reemplaza sus items, revirtiendo y
+ * reaplicando el stock correspondiente en el backend. */
+export async function updatePurchase(id: string, input: PurchaseInput): Promise<Payable> {
+  return apiPut<Payable>(`/api/payables/purchase/${id}`, input);
+}
+
+/** Elimina una compra (cuenta por pagar): revierte el stock aportado por
+ * sus items y borra los pagos asociados. */
+export async function deletePurchase(id: string): Promise<void> {
+  return apiDelete<void>(`/api/payables/${id}`);
+}
+
+/** Registra un gasto (cuenta por pagar sin productos asociados). */
+export async function createExpense(input: PayableInput): Promise<Payable> {
+  return apiPost<Payable>("/api/payables", input);
+}
+
+/** Elimina un gasto o cualquier cuenta por pagar. */
+export async function deleteExpense(id: string): Promise<void> {
+  return apiDelete<void>(`/api/payables/${id}`);
 }
 
 /** Registra un abono (a una venta fiada o a una cuenta por pagar). */

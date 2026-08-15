@@ -306,12 +306,12 @@ function Purchases() {
             </div>
             <div>
               <Label className="mb-1.5 block">Tipo de compra</Label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 <Button
                   type="button"
                   variant={!isCash ? "default" : "outline"}
                   onClick={() => setIsCash(false)}
-                  className="w-full"
+                  className="w-full h-auto min-h-9 whitespace-normal text-center leading-snug py-2"
                 >
                   A crédito (genera deuda)
                 </Button>
@@ -319,7 +319,7 @@ function Purchases() {
                   type="button"
                   variant={isCash ? "default" : "outline"}
                   onClick={() => { setIsCash(true); setDueDate(""); }}
-                  className="w-full"
+                  className="w-full h-auto min-h-9 whitespace-normal text-center leading-snug py-2"
                 >
                   De contado (pagada)
                 </Button>

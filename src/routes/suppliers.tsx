@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, SortableHead } from "@/components/ui/table";
-import { Plus, Pencil } from "lucide-react";
+import { Plus, Pencil, Eye } from "lucide-react";
 import { money } from "@/lib/format";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -34,6 +34,7 @@ function Suppliers() {
   const qc = useQueryClient();
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<Form | null>(null);
+  const [viewing, setViewing] = useState<Supplier | null>(null);
 
   const { data: suppliers = [] } = useQuery({
     queryKey: ["suppliers-full"],
@@ -92,7 +93,10 @@ function Suppliers() {
                   <TableCell className="hidden sm:table-cell text-right tabular-nums">{money(s.agg.total)}</TableCell>
                   <TableCell className="text-right tabular-nums">{s.agg.owed > 0 ? <Badge variant="destructive">{money(s.agg.owed)}</Badge> : money(0)}</TableCell>
                   <TableCell>
-                    <Button variant="ghost" size="icon" onClick={() => setEditing({ id: s.id, name: s.name, phone: s.phone ?? "", notes: s.notes ?? "" })}><Pencil className="h-4 w-4" /></Button>
+                    <div className="flex gap-1">
+                      <Button variant="ghost" size="icon" onClick={() => setViewing(s)}><Eye className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" onClick={() => setEditing({ id: s.id, name: s.name, phone: s.phone ?? "", notes: s.notes ?? "" })}><Pencil className="h-4 w-4" /></Button>
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
@@ -116,6 +120,16 @@ function Suppliers() {
             <Button variant="outline" onClick={() => setEditing(null)}>Cancelar</Button>
             <Button onClick={() => editing && save.mutate(editing)}>Guardar</Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!viewing} onOpenChange={(o) => !o && setViewing(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>{viewing?.name}</DialogTitle></DialogHeader>
+          <div className="text-sm text-muted-foreground space-y-1">
+            <p>Teléfono: {viewing?.phone || "—"}</p>
+            {viewing?.notes && <p>Notas: {viewing.notes}</p>}
+          </div>
         </DialogContent>
       </Dialog>
     </div>

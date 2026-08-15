@@ -8,9 +8,11 @@ import {
   Truck,
   HandCoins,
   Receipt,
+  ReceiptText,
   BarChart3,
   ListOrdered,
   Store,
+  Wallet,
   UserCog,
 } from "lucide-react";
 import {
@@ -32,6 +34,8 @@ const primary = [
   { title: "Ventas", url: "/sales", icon: ListOrdered },
   { title: "Punto de compra", url: "/purchase-point", icon: Store },
   { title: "Compras", url: "/purchases", icon: ShoppingBasket },
+  { title: "Punto de gastos", url: "/expense-point", icon: Wallet },
+  { title: "Gastos", url: "/expenses", icon: ReceiptText },
 ];
 const catalog = [
   { title: "Inventario", url: "/inventory", icon: Package },
