@@ -14,6 +14,7 @@ import {
   Store,
   Wallet,
   UserCog,
+  CalendarDays,
 } from "lucide-react";
 import {
   Sidebar,
@@ -32,6 +33,7 @@ const primary = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Punto de venta", url: "/pos", icon: ShoppingCart },
   { title: "Ventas", url: "/sales", icon: ListOrdered },
+  { title: "Utilidad Bruta", url: "/daily-sales", icon: CalendarDays },
   { title: "Punto de compra", url: "/purchase-point", icon: Store },
   { title: "Compras", url: "/purchases", icon: ShoppingBasket },
   { title: "Punto de gastos", url: "/expense-point", icon: Wallet },

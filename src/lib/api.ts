@@ -242,6 +242,24 @@ export type Reports = {
   top_by_profit: TopProduct[];
 };
 
+export type DailyProductSale = {
+  product_id: string | null;
+  product_name: string;
+  quantity: number;
+  sale_total: number;
+  cost_total: number;
+  profit: number;
+};
+
+export type DailyReport = {
+  date_from: string;
+  date_to: string;
+  items: DailyProductSale[];
+  total_sales: number;
+  total_cost: number;
+  total_profit: number;
+};
+
 export type AppUser = {
   id: string;
   name: string;

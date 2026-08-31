@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as CustomersRouteImport } from './routes/customers'
+import { Route as DailySalesRouteImport } from './routes/daily-sales'
 import { Route as ExpensePointRouteImport } from './routes/expense-point'
 import { Route as ExpensesRouteImport } from './routes/expenses'
 import { Route as InventoryRouteImport } from './routes/inventory'
@@ -32,6 +33,11 @@ const IndexRoute = IndexRouteImport.update({
 const CustomersRoute = CustomersRouteImport.update({
   id: '/customers',
   path: '/customers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DailySalesRoute = DailySalesRouteImport.update({
+  id: '/daily-sales',
+  path: '/daily-sales',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ExpensePointRoute = ExpensePointRouteImport.update({
@@ -98,6 +104,7 @@ const AdminUsersRoute = AdminUsersRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/customers': typeof CustomersRoute
+  '/daily-sales': typeof DailySalesRoute
   '/expense-point': typeof ExpensePointRoute
   '/expenses': typeof ExpensesRoute
   '/inventory': typeof InventoryRoute
@@ -114,6 +121,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/customers': typeof CustomersRoute
+  '/daily-sales': typeof DailySalesRoute
   '/expense-point': typeof ExpensePointRoute
   '/expenses': typeof ExpensesRoute
   '/inventory': typeof InventoryRoute
@@ -131,6 +139,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/customers': typeof CustomersRoute
+  '/daily-sales': typeof DailySalesRoute
   '/expense-point': typeof ExpensePointRoute
   '/expenses': typeof ExpensesRoute
   '/inventory': typeof InventoryRoute
@@ -149,6 +158,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/customers'
+    | '/daily-sales'
     | '/expense-point'
     | '/expenses'
     | '/inventory'
@@ -165,6 +175,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/customers'
+    | '/daily-sales'
     | '/expense-point'
     | '/expenses'
     | '/inventory'
@@ -181,6 +192,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/customers'
+    | '/daily-sales'
     | '/expense-point'
     | '/expenses'
     | '/inventory'
@@ -198,6 +210,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   CustomersRoute: typeof CustomersRoute
+  DailySalesRoute: typeof DailySalesRoute
   ExpensePointRoute: typeof ExpensePointRoute
   ExpensesRoute: typeof ExpensesRoute
   InventoryRoute: typeof InventoryRoute
@@ -226,6 +239,13 @@ declare module '@tanstack/react-router' {
       path: '/customers'
       fullPath: '/customers'
       preLoaderRoute: typeof CustomersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/daily-sales': {
+      id: '/daily-sales'
+      path: '/daily-sales'
+      fullPath: '/daily-sales'
+      preLoaderRoute: typeof DailySalesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/expense-point': {
@@ -318,6 +338,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   CustomersRoute: CustomersRoute,
+  DailySalesRoute: DailySalesRoute,
   ExpensePointRoute: ExpensePointRoute,
   ExpensesRoute: ExpensesRoute,
   InventoryRoute: InventoryRoute,

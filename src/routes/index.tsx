@@ -1,12 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Link } from "@tanstack/react-router";
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "@/lib/api";
 import type { Dashboard as DashboardData, Sale, Receivable } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { SaleDetailDialog } from "@/components/sale-detail-dialog";
 import { money, formatDate } from "@/lib/format";
-import { AlertCircle, TrendingUp, DollarSign, ShoppingBag, Package, Users } from "lucide-react";
+import { AlertCircle, TrendingUp, DollarSign, ShoppingBag, Package, Users, Eye } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -21,6 +23,7 @@ export const Route = createFileRoute("/")({
 });
 
 function Dashboard() {
+  const [viewing, setViewing] = useState<Sale | null>(null);
   const { data, isLoading } = useQuery({
     queryKey: ["dashboard"],
     queryFn: async () => {
@@ -133,24 +136,66 @@ function Dashboard() {
             <p className="text-sm text-muted-foreground">Sin ventas registradas.</p>
           ) : (
             <div className="divide-y">
+              {/* Table header */}
+              <div className="hidden sm:grid grid-cols-[1fr_120px_100px_90px_90px_32px] gap-4 px-2 pb-2 text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                <span>Cliente</span>
+                <span>Fecha</span>
+                <span className="text-right">Total</span>
+                <span className="text-right">Pagado</span>
+                <span className="text-center">Estado</span>
+                <span />
+              </div>
+
               {recentSales.slice(0, 8).map((s) => (
-                <div key={s.id} className="flex items-center justify-between py-2 text-sm">
-                  <div>
-                    <div className="font-medium">{s.customer_name || "Venta de mostrador"}</div>
-                    <div className="text-xs text-muted-foreground">{formatDate(s.sale_date)}</div>
+                <button
+                  key={s.id}
+                  onClick={() => setViewing(s)}
+                  className="w-full text-left hover:bg-accent/50 transition-colors -mx-2 px-2 rounded-md"
+                >
+                  <div className="grid grid-cols-[1fr_auto] sm:grid-cols-[1fr_120px_100px_90px_90px_32px] gap-4 py-2.5 items-center text-sm">
+                    <div className="min-w-0">
+                      <div className="font-medium truncate">{s.customer_name || "Venta de mostrador"}</div>
+                      <div className="text-xs text-muted-foreground sm:hidden">{formatDate(s.sale_date)}</div>
+                    </div>
+
+                    <div className="text-sm text-muted-foreground hidden sm:block">
+                      {formatDate(s.sale_date)}
+                    </div>
+
+                    <div className="font-medium tabular-nums text-right hidden sm:block">
+                      {money(Number(s.total))}
+                    </div>
+
+                    <div className="tabular-nums text-right hidden sm:block">
+                      {money(Number(s.amount_paid))}
+                    </div>
+
+                    <div className="hidden sm:flex justify-center">
+                      <Badge variant={s.status === "paid" ? "default" : "secondary"} className={s.status === "credit" ? "text-warning" : ""}>
+                        {s.status === "paid" ? "Pagado" : "Fiado"}
+                      </Badge>
+                    </div>
+
+                    {/* Mobile: compact */}
+                    <div className="sm:hidden flex flex-col items-end gap-1">
+                      <span className="font-medium text-sm tabular-nums">{money(Number(s.total))}</span>
+                      <Badge variant={s.status === "paid" ? "default" : "secondary"} className={`text-xs ${s.status === "credit" ? "text-warning" : ""}`}>
+                        {s.status === "paid" ? "Pagado" : "Fiado"}
+                      </Badge>
+                    </div>
+
+                    <div className="hidden sm:flex justify-center text-muted-foreground">
+                      <Eye className="h-4 w-4" />
+                    </div>
                   </div>
-                  <div className="flex items-center gap-3">
-                    <Badge variant={s.status === "paid" ? "default" : "secondary"}>
-                      {s.status === "paid" ? "Pagado" : "Fiado"}
-                    </Badge>
-                    <span className="font-medium tabular-nums">{money(Number(s.total))}</span>
-                  </div>
-                </div>
+                </button>
               ))}
             </div>
           )}
         </CardContent>
       </Card>
+
+      <SaleDetailDialog sale={viewing} onClose={() => setViewing(null)} />
     </div>
   );
 }
