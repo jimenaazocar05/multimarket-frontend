@@ -15,6 +15,7 @@ import {
   Wallet,
   UserCog,
   CalendarDays,
+  TrendingUp,
 } from "lucide-react";
 import {
   Sidebar,
@@ -47,6 +48,7 @@ const catalog = [
 const finance = [
   { title: "Cuentas por cobrar", url: "/receivables", icon: HandCoins },
   { title: "Cuentas por pagar", url: "/payables", icon: Receipt },
+  { title: "Resultado neto", url: "/monthly-report", icon: TrendingUp },
   { title: "Reportes", url: "/reports", icon: BarChart3 },
 ];
 const admin = [

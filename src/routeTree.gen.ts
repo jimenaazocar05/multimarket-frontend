@@ -15,6 +15,7 @@ import { Route as DailySalesRouteImport } from './routes/daily-sales'
 import { Route as ExpensePointRouteImport } from './routes/expense-point'
 import { Route as ExpensesRouteImport } from './routes/expenses'
 import { Route as InventoryRouteImport } from './routes/inventory'
+import { Route as MonthlyReportRouteImport } from './routes/monthly-report'
 import { Route as PayablesRouteImport } from './routes/payables'
 import { Route as PosRouteImport } from './routes/pos'
 import { Route as PurchasePointRouteImport } from './routes/purchase-point'
@@ -53,6 +54,11 @@ const ExpensesRoute = ExpensesRouteImport.update({
 const InventoryRoute = InventoryRouteImport.update({
   id: '/inventory',
   path: '/inventory',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MonthlyReportRoute = MonthlyReportRouteImport.update({
+  id: '/monthly-report',
+  path: '/monthly-report',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PayablesRoute = PayablesRouteImport.update({
@@ -108,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/expense-point': typeof ExpensePointRoute
   '/expenses': typeof ExpensesRoute
   '/inventory': typeof InventoryRoute
+  '/monthly-report': typeof MonthlyReportRoute
   '/payables': typeof PayablesRoute
   '/pos': typeof PosRoute
   '/purchase-point': typeof PurchasePointRoute
@@ -125,6 +132,7 @@ export interface FileRoutesByTo {
   '/expense-point': typeof ExpensePointRoute
   '/expenses': typeof ExpensesRoute
   '/inventory': typeof InventoryRoute
+  '/monthly-report': typeof MonthlyReportRoute
   '/payables': typeof PayablesRoute
   '/pos': typeof PosRoute
   '/purchase-point': typeof PurchasePointRoute
@@ -143,6 +151,7 @@ export interface FileRoutesById {
   '/expense-point': typeof ExpensePointRoute
   '/expenses': typeof ExpensesRoute
   '/inventory': typeof InventoryRoute
+  '/monthly-report': typeof MonthlyReportRoute
   '/payables': typeof PayablesRoute
   '/pos': typeof PosRoute
   '/purchase-point': typeof PurchasePointRoute
@@ -162,6 +171,7 @@ export interface FileRouteTypes {
     | '/expense-point'
     | '/expenses'
     | '/inventory'
+    | '/monthly-report'
     | '/payables'
     | '/pos'
     | '/purchase-point'
@@ -179,6 +189,7 @@ export interface FileRouteTypes {
     | '/expense-point'
     | '/expenses'
     | '/inventory'
+    | '/monthly-report'
     | '/payables'
     | '/pos'
     | '/purchase-point'
@@ -196,6 +207,7 @@ export interface FileRouteTypes {
     | '/expense-point'
     | '/expenses'
     | '/inventory'
+    | '/monthly-report'
     | '/payables'
     | '/pos'
     | '/purchase-point'
@@ -214,6 +226,7 @@ export interface RootRouteChildren {
   ExpensePointRoute: typeof ExpensePointRoute
   ExpensesRoute: typeof ExpensesRoute
   InventoryRoute: typeof InventoryRoute
+  MonthlyReportRoute: typeof MonthlyReportRoute
   PayablesRoute: typeof PayablesRoute
   PosRoute: typeof PosRoute
   PurchasePointRoute: typeof PurchasePointRoute
@@ -267,6 +280,13 @@ declare module '@tanstack/react-router' {
       path: '/inventory'
       fullPath: '/inventory'
       preLoaderRoute: typeof InventoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/monthly-report': {
+      id: '/monthly-report'
+      path: '/monthly-report'
+      fullPath: '/monthly-report'
+      preLoaderRoute: typeof MonthlyReportRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/payables': {
@@ -342,6 +362,7 @@ const rootRouteChildren: RootRouteChildren = {
   ExpensePointRoute: ExpensePointRoute,
   ExpensesRoute: ExpensesRoute,
   InventoryRoute: InventoryRoute,
+  MonthlyReportRoute: MonthlyReportRoute,
   PayablesRoute: PayablesRoute,
   PosRoute: PosRoute,
   PurchasePointRoute: PurchasePointRoute,

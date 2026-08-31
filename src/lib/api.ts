@@ -260,6 +260,62 @@ export type DailyReport = {
   total_profit: number;
 };
 
+export type ProfitLoss = {
+  period_from: string;
+  period_to: string;
+  revenue: number;
+  cogs: number;
+  gross_profit: number;
+  operating_expenses: number;
+  net_profit: number;
+  gross_margin_pct: number;
+  net_margin_pct: number;
+};
+
+export type CashFlow = {
+  period_from: string;
+  period_to: string;
+  cash_in: number;
+  cash_in_from_sales: number;
+  cash_in_from_receivables: number;
+  cash_out: number;
+  cash_out_from_expenses: number;
+  cash_out_from_purchases: number;
+  net_cash_flow: number;
+};
+
+export type TopExpense = {
+  payable_id: string;
+  concept: string;
+  supplier_name: string | null;
+  amount: number;
+  issue_date: string;
+};
+
+export type DueSoonItem = {
+  payable_id: string;
+  concept: string;
+  supplier_name: string | null;
+  balance: number;
+  due_date: string;
+  days_until_due: number;
+};
+
+export type MonthlyKpis = {
+  period_from: string;
+  period_to: string;
+  profit_loss: ProfitLoss;
+  profit_loss_prev: ProfitLoss;
+  cash_flow: CashFlow;
+  net_margin_change_pct: number;
+  open_receivables_total: number;
+  open_receivables_avg_days_old: number;
+  open_payables_total: number;
+  open_payables_avg_days_old: number;
+  top_expenses: TopExpense[];
+  due_soon: DueSoonItem[];
+};
+
 export type AppUser = {
   id: string;
   name: string;
