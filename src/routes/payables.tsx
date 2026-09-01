@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { z } from "zod";
 import { useMemo, useState } from "react";
 import { useMutation, useQueries, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet, apiPost } from "@/lib/api";
@@ -21,11 +22,17 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
-import { HandCoins, Plus, Eye, Pencil, Trash2, X } from "lucide-react";
+import { HandCoins, Plus, Eye, Pencil, Trash2, X, FileSpreadsheet } from "lucide-react";
 import { money, formatDate } from "@/lib/format";
 import { registerPayment, updatePayable, deleteExpense } from "@/lib/data";
+import { exportToExcel } from "@/lib/export";
 import { useTableSort } from "@/lib/sort";
 import { toast } from "sonner";
+
+const payablesSearchSchema = z.object({
+  from: z.string().optional(),
+  to: z.string().optional(),
+});
 
 export const Route = createFileRoute("/payables")({
   head: () => ({
@@ -36,6 +43,7 @@ export const Route = createFileRoute("/payables")({
       { property: "og:description", content: "Deudas con proveedores y registro de pagos." },
     ],
   }),
+  validateSearch: payablesSearchSchema,
   component: Payables,
 });
 
@@ -97,6 +105,7 @@ function groupBySupplier(data: Payable[]): PayableGroup[] {
 }
 
 function Payables() {
+  const search = Route.useSearch();
   const qc = useQueryClient();
   const [creating, setCreating] = useState<NewForm | null>(null);
   const [supplierQuery, setSupplierQuery] = useState("");
@@ -105,8 +114,8 @@ function Payables() {
   const [amount, setAmount] = useState("");
   const [viewing, setViewing] = useState<PayableGroup | null>(null);
   const [q, setQ] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState(search.from ?? "");
+  const [dateTo, setDateTo] = useState(search.to ?? "");
   const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "credit">("all");
   const [editingPayable, setEditingPayable] = useState<PayableEditForm | null>(null);
   const [editSupplierQuery, setEditSupplierQuery] = useState("");
@@ -123,6 +132,19 @@ function Payables() {
   const openItems = data.filter((p) => p.balance > 0.001);
   const totalOwed = openItems.reduce((s, r) => s + r.balance, 0);
   const totalPaid = data.reduce((s, r) => s + Number(r.amount_paid), 0);
+
+  const exportExcel = () => {
+    exportToExcel(`cuentas-por-pagar_${dateFrom || "todas"}_${dateTo || "todas"}`, [
+      { name: "Resumen", rows: [{ Desde: dateFrom || "—", Hasta: dateTo || "—", "Total por pagar": totalOwed, "Total pagado": totalPaid }] },
+      {
+        name: "Detalle",
+        rows: sorted.map((g) => ({
+          Emitida: g.oldest_date, Proveedor: g.supplier_name || "—",
+          Monto: g.amount, Pagado: g.amount_paid, Saldo: g.balance, Vence: g.nearest_due_date || "—",
+        })),
+      },
+    ]);
+  };
 
   const phoneBySupplierId = useMemo(() => {
     const map = new Map<string, string>();
@@ -298,6 +320,9 @@ function Payables() {
               <div className="text-2xl font-semibold tabular-nums text-success">{money(totalPaid)}</div>
             </CardContent></Card>
           </div>
+          <Button variant="outline" onClick={exportExcel} className="w-full sm:w-auto">
+            <FileSpreadsheet className="h-4 w-4 mr-1" /> Exportar a Excel
+          </Button>
           <Button className="w-full sm:w-auto" onClick={() => setCreating({ supplier: null, concept: "", amount: "", due_date: "", notes: "" })}>
             <Plus className="h-4 w-4 mr-1" /> Nueva cuenta
           </Button>

@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { z } from "zod";
 import { useState, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet } from "@/lib/api";
@@ -16,6 +17,7 @@ import {
   Receipt,
   Trash2,
   X,
+  FileSpreadsheet,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -35,7 +37,13 @@ import {
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
 import { SaleDetailDialog } from "@/components/sale-detail-dialog";
+import { exportToExcel } from "@/lib/export";
 import { toast } from "sonner";
+
+const salesSearchSchema = z.object({
+  from: z.string().optional(),
+  to: z.string().optional(),
+});
 
 export const Route = createFileRoute("/sales")({
   head: () => ({
@@ -44,6 +52,7 @@ export const Route = createFileRoute("/sales")({
       { name: "description", content: "Historial de ventas por rango de fechas." },
     ],
   }),
+  validateSearch: salesSearchSchema,
   component: SalesPage,
 });
 
@@ -76,9 +85,10 @@ type EditForm = {
 
 function SalesPage() {
   const t = today();
+  const routeSearch = Route.useSearch();
   const qc = useQueryClient();
-  const [from, setFrom] = useState(t);
-  const [to, setTo] = useState(t);
+  const [from, setFrom] = useState(routeSearch.from ?? t);
+  const [to, setTo] = useState(routeSearch.to ?? t);
   const [search, setSearch] = useState("");
   const [viewing, setViewing] = useState<Sale | null>(null);
   const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "credit">("all");
@@ -210,6 +220,30 @@ function SalesPage() {
   const totalFiado = totalVentas - totalPagado;
   const nroPagadas = filtered.filter((v) => v.status === "paid").length;
   const nroFiadas = filtered.filter((v) => v.status === "credit").length;
+  const gananciaEstimada = filtered.reduce((s, v) => s + Number(v.total) - Number(v.cost_total), 0);
+
+  const exportExcel = () => {
+    exportToExcel(`ventas_${from}_${to}`, [
+      {
+        name: "Resumen",
+        rows: [{
+          Desde: from, Hasta: to,
+          "Total ventas": totalVentas, Cobrado: totalPagado, "Pendiente (fiado)": totalFiado,
+          "Ganancia estimada": gananciaEstimada,
+        }],
+      },
+      {
+        name: "Detalle",
+        rows: filtered.map((s) => ({
+          Cliente: s.customer_name ?? "Venta de mostrador",
+          Fecha: s.sale_date,
+          Total: Number(s.total),
+          Pagado: Number(s.amount_paid),
+          Estado: s.status === "paid" ? "Pagado" : "Fiado",
+        })),
+      },
+    ]);
+  };
 
   return (
     <div className="space-y-6">
@@ -247,6 +281,9 @@ function SalesPage() {
               className="text-sm bg-transparent outline-none text-foreground w-36"
             />
           </div>
+          <Button variant="outline" onClick={exportExcel}>
+            <FileSpreadsheet className="h-4 w-4 mr-1" /> Exportar a Excel
+          </Button>
         </div>
       </div>
 
@@ -275,7 +312,7 @@ function SalesPage() {
         />
         <StatCard
           label="Ganancia estimada"
-          value={money(filtered.reduce((s, v) => s + Number(v.total) - Number(v.cost_total), 0))}
+          value={money(gananciaEstimada)}
           sub="total − costo"
           icon={TrendingUp}
           color="chart-3"

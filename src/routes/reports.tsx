@@ -53,9 +53,23 @@ function Reports() {
 
   const exportExcel = () => {
     if (!agg) return;
-    exportToExcel(`reporte_${from}_${to}`, agg.byRevenue.map((p) => ({
-      Producto: p.name, Unidades: p.qty, Ingreso: p.revenue, Ganancia: p.profit,
-    })));
+    exportToExcel(`reporte_${from}_${to}`, [
+      {
+        name: "Resumen",
+        rows: [{
+          Desde: from, Hasta: to,
+          Ventas: agg.salesCount, Ingreso: agg.total, Costo: agg.cost, Ganancia: agg.profit,
+        }],
+      },
+      {
+        name: "Top por ingreso",
+        rows: agg.byRevenue.map((p) => ({ Producto: p.name, Unidades: p.qty, Ingreso: p.revenue, Ganancia: p.profit })),
+      },
+      {
+        name: "Top por ganancia",
+        rows: agg.byProfit.map((p) => ({ Producto: p.name, Unidades: p.qty, Ingreso: p.revenue, Ganancia: p.profit })),
+      },
+    ]);
   };
   const exportPdf = () => {
     if (!agg) return;

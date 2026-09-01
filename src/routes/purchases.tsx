@@ -17,6 +17,7 @@ import {
   Pencil,
   Trash2,
   X,
+  FileSpreadsheet,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -36,6 +37,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
+import { exportToExcel } from "@/lib/export";
 import { useTableSort } from "@/lib/sort";
 import { toast } from "sonner";
 
@@ -248,6 +250,29 @@ function PurchasesPage() {
   const nroPagadas = filtered.filter((p) => p.balance <= 0).length;
   const nroCredito = filtered.filter((p) => p.balance > 0).length;
 
+  const exportExcel = () => {
+    exportToExcel(`compras_${from}_${to}`, [
+      {
+        name: "Resumen",
+        rows: [{
+          Desde: from, Hasta: to,
+          "Total compras": totalCompras, Pagado: totalPagado, "Deuda generada": totalCredito,
+        }],
+      },
+      {
+        name: "Detalle",
+        rows: filtered.map((p) => ({
+          Proveedor: p.supplier_name ?? "Proveedor desconocido",
+          Concepto: p.concept,
+          Fecha: p.issue_date,
+          Total: Number(p.amount),
+          Pagado: Number(p.amount_paid),
+          Estado: Number(p.balance) > 0 ? "Crédito" : "Pagado",
+        })),
+      },
+    ]);
+  };
+
   return (
     <div className="space-y-6">
       {/* ── Header ── */}
@@ -284,6 +309,9 @@ function PurchasesPage() {
               className="text-sm bg-transparent outline-none text-foreground w-36"
             />
           </div>
+          <Button variant="outline" onClick={exportExcel}>
+            <FileSpreadsheet className="h-4 w-4 mr-1" /> Exportar a Excel
+          </Button>
         </div>
       </div>
 

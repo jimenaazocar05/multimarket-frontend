@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { z } from "zod";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet } from "@/lib/api";
@@ -22,11 +23,17 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
-import { HandCoins, Eye, Pencil, Trash2, Search, ShoppingBag, X } from "lucide-react";
+import { HandCoins, Eye, Pencil, Trash2, Search, ShoppingBag, X, FileSpreadsheet } from "lucide-react";
 import { money, bolivares, formatDate, daysBetween } from "@/lib/format";
+import { exportToExcel } from "@/lib/export";
 import { useTableSort } from "@/lib/sort";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+
+const receivablesSearchSchema = z.object({
+  from: z.string().optional(),
+  to: z.string().optional(),
+});
 
 export const Route = createFileRoute("/receivables")({
   head: () => ({
@@ -37,6 +44,7 @@ export const Route = createFileRoute("/receivables")({
       { property: "og:description", content: "Saldos pendientes de clientes y registro de abonos." },
     ],
   }),
+  validateSearch: receivablesSearchSchema,
   component: Receivables,
 });
 
@@ -100,13 +108,14 @@ type EditForm = {
 };
 
 function Receivables() {
+  const search = Route.useSearch();
   const qc = useQueryClient();
   const [paying, setPaying] = useState<ReceivableGroup | null>(null);
   const [amount, setAmount] = useState("");
   const [viewing, setViewing] = useState<ReceivableGroup | null>(null);
   const [q, setQ] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
+  const [dateFrom, setDateFrom] = useState(search.from ?? "");
+  const [dateTo, setDateTo] = useState(search.to ?? "");
   const [statusFilter, setStatusFilter] = useState<"all" | "paid" | "credit">("all");
   const [rate, setRate] = useState<string>(loadRate);
 
@@ -184,6 +193,19 @@ function Receivables() {
 
   const totalOwed = statusFiltered.reduce((s, r) => s + (Number(r.total) - Number(r.amount_paid)), 0);
   const totalPaid = statusFiltered.reduce((s, r) => s + Number(r.amount_paid), 0);
+
+  const exportExcel = () => {
+    exportToExcel(`cuentas-por-cobrar_${dateFrom || "todas"}_${dateTo || "todas"}`, [
+      { name: "Resumen", rows: [{ Desde: dateFrom || "—", Hasta: dateTo || "—", "Total por cobrar": totalOwed, "Total cobrado": totalPaid }] },
+      {
+        name: "Detalle",
+        rows: sorted.map((g) => ({
+          Fecha: g.oldest_date, Cliente: g.customer_name || "—",
+          Total: g.total, Pagado: g.amount_paid, Saldo: g.balance, "Antigüedad (días)": g.days_old,
+        })),
+      },
+    ]);
+  };
 
   const productResults = useMemo(() => {
     if (!productQuery.trim()) return [];
@@ -323,6 +345,9 @@ function Receivables() {
               {rateNum > 0 && <div className="text-sm text-muted-foreground tabular-nums">{bs(totalPaid)}</div>}
             </CardContent></Card>
           </div>
+          <Button variant="outline" onClick={exportExcel} className="w-full sm:w-auto">
+            <FileSpreadsheet className="h-4 w-4 mr-1" /> Exportar a Excel
+          </Button>
         </div>
       </div>
 

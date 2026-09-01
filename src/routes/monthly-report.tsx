@@ -1,11 +1,19 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { z } from "zod";
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "@/lib/api";
 import type { MonthlyKpis } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { money } from "@/lib/format";
-import { Calendar, TrendingUp, TrendingDown } from "lucide-react";
+import { exportToExcel } from "@/lib/export";
+import { Calendar, TrendingUp, TrendingDown, FileSpreadsheet } from "lucide-react";
+
+const monthlyReportSearchSchema = z.object({
+  from: z.string().optional(),
+  to: z.string().optional(),
+});
 
 export const Route = createFileRoute("/monthly-report")({
   head: () => ({
@@ -16,6 +24,7 @@ export const Route = createFileRoute("/monthly-report")({
       { property: "og:description", content: "Utilidad neta y flujo de caja: ventas, costo, gastos y deudas relacionados en un solo lugar." },
     ],
   }),
+  validateSearch: monthlyReportSearchSchema,
   component: MonthlyReportPage,
 });
 
@@ -34,15 +43,50 @@ function monthBounds(): { from: string; to: string } {
 }
 
 function MonthlyReportPage() {
+  const search = Route.useSearch();
   const initial = monthBounds();
-  const [from, setFrom] = useState(initial.from);
-  const [to, setTo] = useState(initial.to);
+  const [from, setFrom] = useState(search.from ?? initial.from);
+  const [to, setTo] = useState(search.to ?? initial.to);
 
   const { data, isLoading } = useQuery({
     queryKey: ["monthly-report-detail", from, to],
     queryFn: () => apiGet<MonthlyKpis>(`/api/monthly-report/kpis?from=${from}&to=${to}`),
     enabled: !!from && !!to,
   });
+
+  const exportExcel = () => {
+    if (!data) return;
+    exportToExcel(`resultado-neto_${from}_${to}`, [
+      {
+        name: "Estado de resultados",
+        rows: [{
+          Desde: from, Hasta: to,
+          Ventas: data.profit_loss.revenue,
+          "Costo de mercadería": data.profit_loss.cogs,
+          "Utilidad bruta": data.profit_loss.gross_profit,
+          "Margen bruto %": data.profit_loss.gross_margin_pct,
+          "Gastos operativos": data.profit_loss.operating_expenses,
+          "Utilidad neta": data.profit_loss.net_profit,
+          "Margen neto %": data.profit_loss.net_margin_pct,
+          "Margen neto vs período anterior (pp)": data.net_margin_change_pct,
+          "Utilidad neta período anterior": data.profit_loss_prev.net_profit,
+        }],
+      },
+      {
+        name: "Flujo de caja",
+        rows: [{
+          Desde: from, Hasta: to,
+          "Ventas al contado": data.cash_flow.cash_in_from_sales,
+          "Abonos a cuentas por cobrar": data.cash_flow.cash_in_from_receivables,
+          "Total cobrado": data.cash_flow.cash_in,
+          "Gastos operativos pagados": data.cash_flow.cash_out_from_expenses,
+          "Compras a proveedores pagadas": data.cash_flow.cash_out_from_purchases,
+          "Total pagado": data.cash_flow.cash_out,
+          "Flujo de caja neto": data.cash_flow.net_cash_flow,
+        }],
+      },
+    ]);
+  };
 
   return (
     <div className="space-y-6">
@@ -76,6 +120,9 @@ function MonthlyReportPage() {
               className="text-sm bg-transparent outline-none text-foreground w-36"
             />
           </div>
+          <Button variant="outline" onClick={exportExcel} disabled={!data}>
+            <FileSpreadsheet className="h-4 w-4 mr-1" /> Exportar a Excel
+          </Button>
         </div>
       </div>
 

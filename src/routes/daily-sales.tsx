@@ -4,11 +4,13 @@ import { useQuery } from "@tanstack/react-query";
 import { apiGet } from "@/lib/api";
 import type { DailyReport } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Table, TableBody, TableCell, TableHeader, TableRow, SortableHead } from "@/components/ui/table";
-import { Search } from "lucide-react";
+import { Search, FileSpreadsheet } from "lucide-react";
 import { money } from "@/lib/format";
+import { exportToExcel } from "@/lib/export";
 import { useTableSort } from "@/lib/sort";
 
 export const Route = createFileRoute("/daily-sales")({
@@ -43,6 +45,19 @@ function DailySales() {
   );
   const { sorted, sortKey, sortOrder, handleSort } = useTableSort(items, "product_name", "asc");
 
+  const exportExcel = () => {
+    if (!report) return;
+    exportToExcel(`utilidad-bruta_${from}_${to}`, [
+      { name: "Resumen", rows: [{ Desde: from, Hasta: to, Venta: report.total_sales, Costo: report.total_cost, Utilidad: report.total_profit }] },
+      {
+        name: "Detalle",
+        rows: sorted.map((p) => ({
+          Producto: p.product_name, Cantidad: p.quantity, Venta: p.sale_total, Costo: p.cost_total, Utilidad: p.profit,
+        })),
+      },
+    ]);
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -73,6 +88,9 @@ function DailySales() {
               />
             </div>
           </div>
+          <Button variant="outline" onClick={exportExcel} disabled={!report}>
+            <FileSpreadsheet className="h-4 w-4 mr-1" /> Exportar a Excel
+          </Button>
         </CardContent>
       </Card>
 

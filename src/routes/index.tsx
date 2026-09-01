@@ -6,8 +6,10 @@ import { apiGet } from "@/lib/api";
 import type { Dashboard as DashboardData, Sale, Receivable, MonthlyKpis, Reports as ReportsData } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { SaleDetailDialog } from "@/components/sale-detail-dialog";
 import { money, formatDate } from "@/lib/format";
+import { exportToExcel } from "@/lib/export";
 import {
   AlertCircle,
   TrendingUp,
@@ -21,6 +23,7 @@ import {
   Receipt,
   Clock,
   Calendar,
+  FileSpreadsheet,
 } from "lucide-react";
 
 export const Route = createFileRoute("/")({
@@ -92,6 +95,41 @@ function Dashboard() {
   const { dashboard, receivables } = staticData;
   const lowStock = dashboard.low_stock;
   const periodLoading = reportLoading || salesLoading || kpisLoading;
+  const hasPeriodData = !periodLoading && !!report && !!monthlyKpis && !!periodSales;
+
+  const exportExcel = () => {
+    if (!hasPeriodData || !report || !monthlyKpis || !periodSales) return;
+    exportToExcel(`dashboard_${from}_${to}`, [
+      {
+        name: "Resumen",
+        rows: [{
+          Desde: from, Hasta: to,
+          Ventas: report.total_sales,
+          "Costo de mercadería": report.total_cost,
+          "Utilidad bruta": report.total_profit,
+          "Utilidad neta": monthlyKpis.profit_loss.net_profit,
+          "Margen neto %": monthlyKpis.profit_loss.net_margin_pct,
+          "Flujo de caja neto": monthlyKpis.cash_flow.net_cash_flow,
+          "Deuda vigente (CxP)": monthlyKpis.open_payables_total,
+          "Por cobrar (CxC)": monthlyKpis.open_receivables_total,
+        }],
+      },
+      {
+        name: "Top productos",
+        rows: report.top_by_revenue.map((p) => ({ Producto: p.product_name, Unidades: p.quantity, Ingreso: p.revenue, Ganancia: p.profit })),
+      },
+      {
+        name: "Ventas del período",
+        rows: periodSales.map((s) => ({
+          Cliente: s.customer_name || "Venta de mostrador",
+          Fecha: s.sale_date,
+          Total: Number(s.total),
+          Pagado: Number(s.amount_paid),
+          Estado: s.status === "paid" ? "Pagado" : "Fiado",
+        })),
+      },
+    ]);
+  };
 
   return (
     <div className="space-y-6">
@@ -125,6 +163,9 @@ function Dashboard() {
               className="text-sm bg-transparent outline-none text-foreground w-36"
             />
           </div>
+          <Button variant="outline" onClick={exportExcel} disabled={!hasPeriodData}>
+            <FileSpreadsheet className="h-4 w-4 mr-1" /> Exportar a Excel
+          </Button>
         </div>
       </div>
 
@@ -133,9 +174,9 @@ function Dashboard() {
       ) : (
         <>
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            <Stat title="Ventas" value={money(report.total_sales)} icon={DollarSign} accent="primary" href="/sales" />
-            <Stat title="Costo de mercadería" value={money(report.total_cost)} icon={Package} accent="chart-2" href="/monthly-report" />
-            <Stat title="Utilidad bruta" value={money(report.total_profit)} icon={ShoppingBag} accent="chart-3" href="/monthly-report" />
+            <Stat title="Ventas" value={money(report.total_sales)} icon={DollarSign} accent="primary" href="/sales" search={{ from, to }} />
+            <Stat title="Costo de mercadería" value={money(report.total_cost)} icon={Package} accent="chart-2" href="/monthly-report" search={{ from, to }} />
+            <Stat title="Utilidad bruta" value={money(report.total_profit)} icon={ShoppingBag} accent="chart-3" href="/monthly-report" search={{ from, to }} />
             <Stat
               title="Utilidad neta"
               value={money(monthlyKpis.profit_loss.net_profit)}
@@ -143,6 +184,7 @@ function Dashboard() {
               icon={monthlyKpis.profit_loss.net_profit >= 0 ? TrendingUp : TrendingDown}
               accent={monthlyKpis.profit_loss.net_profit >= 0 ? "success" : "destructive"}
               href="/monthly-report"
+              search={{ from, to }}
             />
           </div>
 
@@ -153,6 +195,7 @@ function Dashboard() {
               icon={monthlyKpis.net_margin_change_pct >= 0 ? TrendingUp : TrendingDown}
               accent={monthlyKpis.net_margin_change_pct >= 0 ? "success" : "destructive"}
               href="/monthly-report"
+              search={{ from, to }}
             />
             <Stat
               title="Flujo de caja neto"
@@ -161,6 +204,7 @@ function Dashboard() {
               icon={Wallet}
               accent={monthlyKpis.cash_flow.net_cash_flow >= 0 ? "success" : "destructive"}
               href="/monthly-report"
+              search={{ from, to }}
             />
             <Stat
               title="Deuda vigente (CxP)"
@@ -169,6 +213,7 @@ function Dashboard() {
               icon={Receipt}
               accent="warning"
               href="/payables"
+              search={{ from, to }}
             />
             <Stat
               title="Por cobrar (CxC)"
@@ -177,6 +222,7 @@ function Dashboard() {
               icon={Users}
               accent="destructive"
               href="/receivables"
+              search={{ from, to }}
             />
           </div>
 
@@ -391,6 +437,7 @@ function Stat({
   icon: Icon,
   accent,
   href,
+  search,
 }: {
   title: string;
   value: string;
@@ -398,6 +445,7 @@ function Stat({
   icon: any;
   accent: string;
   href?: string;
+  search?: { from: string; to: string };
 }) {
   return (
     <Card>
@@ -413,7 +461,7 @@ function Stat({
           </div>
         </div>
         {href && (
-          <Link to={href} className="text-primary text-xs mt-3 inline-block">
+          <Link to={href} search={search} className="text-primary text-xs mt-3 inline-block">
             Ver detalle →
           </Link>
         )}

@@ -9,9 +9,9 @@ import {
   ChevronDown,
   ChevronUp,
   Wallet,
-  ShoppingBasket,
   Search,
   Trash2,
+  FileSpreadsheet,
 } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -26,13 +26,14 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from "@/components/ui/alert-dialog";
+import { exportToExcel } from "@/lib/export";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/expenses")({
   head: () => ({
     meta: [
       { title: "Gastos — Multimarket" },
-      { name: "description", content: "Gastos registrados y cuentas por pagar ya saldadas." },
+      { name: "description", content: "Gastos operativos: Punto de gastos y cuentas por pagar registradas directamente." },
     ],
   }),
   component: ExpensesPage,
@@ -76,11 +77,11 @@ function ExpensesPage() {
     enabled: !!from && !!to,
   });
 
-  // Un "gasto" es una cuenta por pagar sin productos asociados (registrada
-  // directamente en Punto de gastos) o, si ya tiene productos (una compra),
-  // solo cuenta como gasto una vez que está totalmente saldada.
+  // Un "gasto" es una cuenta por pagar sin productos asociados: registrada
+  // directamente en Punto de gastos o en Cuentas por pagar. Las compras a
+  // proveedores (con productos asociados) nunca cuentan como gasto operativo.
   const expenses = useMemo(
-    () => payables.filter((p) => !p.items || p.items.length === 0 || p.balance <= 0),
+    () => payables.filter((p) => !p.items || p.items.length === 0),
     [payables],
   );
 
@@ -106,8 +107,27 @@ function ExpensesPage() {
   }, [expenses, search]);
 
   const totalGastos = filtered.reduce((s, p) => s + Number(p.amount), 0);
-  const nroDirectos = filtered.filter((p) => !p.items || p.items.length === 0).length;
-  const nroCompras = filtered.length - nroDirectos;
+
+  const exportExcel = () => {
+    exportToExcel(`gastos_${from}_${to}`, [
+      {
+        name: "Resumen",
+        rows: [{
+          Desde: from, Hasta: to,
+          "Total gastos": totalGastos, "Cantidad de gastos": filtered.length,
+        }],
+      },
+      {
+        name: "Detalle",
+        rows: filtered.map((p) => ({
+          Concepto: p.concept,
+          Proveedor: p.supplier_name ?? "—",
+          Fecha: p.issue_date,
+          Total: Number(p.amount),
+        })),
+      },
+    ]);
+  };
 
   return (
     <div className="space-y-6">
@@ -115,7 +135,7 @@ function ExpensesPage() {
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Gastos</h1>
           <p className="text-sm text-muted-foreground">
-            Gastos registrados y cuentas por pagar ya saldadas, por rango de fechas.
+            Gastos operativos: Punto de gastos y cuentas por pagar registradas directamente, por rango de fechas.
           </p>
         </div>
 
@@ -141,13 +161,14 @@ function ExpensesPage() {
               className="text-sm bg-transparent outline-none text-foreground w-36"
             />
           </div>
+          <Button variant="outline" onClick={exportExcel}>
+            <FileSpreadsheet className="h-4 w-4 mr-1" /> Exportar a Excel
+          </Button>
         </div>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <StatCard label="Total gastos" value={money(totalGastos)} sub={`${filtered.length} gasto${filtered.length !== 1 ? "s" : ""}`} icon={Wallet} color="primary" />
-        <StatCard label="Gastos directos" value={String(nroDirectos)} sub="registrados en Punto de gastos" icon={Wallet} color="success" />
-        <StatCard label="Compras saldadas" value={String(nroCompras)} sub="incluidas por estar pagadas" icon={ShoppingBasket} color="chart-3" />
+        <StatCard label="Total gastos operativos" value={money(totalGastos)} sub={`${filtered.length} gasto${filtered.length !== 1 ? "s" : ""}`} icon={Wallet} color="primary" />
       </div>
 
       <div className="relative">
@@ -191,7 +212,6 @@ function ExpensesPage() {
 
               {filtered.map((expense) => {
                 const isOpen = expanded === expense.id;
-                const isPurchase = !!expense.items && expense.items.length > 0;
 
                 return (
                   <div key={expense.id}>
@@ -204,7 +224,6 @@ function ExpensesPage() {
                           <div className="font-medium text-sm truncate">{expense.concept}</div>
                           <div className="text-xs text-muted-foreground font-medium mt-0.5 truncate">
                             {expense.supplier_name ?? "—"}
-                            {isPurchase && " · Compra saldada"}
                           </div>
                         </div>
 
@@ -241,24 +260,15 @@ function ExpensesPage() {
                               </div>
                             )}
                           </div>
-                          {!isPurchase && (
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="text-destructive hover:text-destructive shrink-0"
-                              onClick={() => setDeleteTarget(expense)}
-                            >
-                              <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Eliminar
-                            </Button>
-                          )}
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-destructive hover:text-destructive shrink-0"
+                            onClick={() => setDeleteTarget(expense)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Eliminar
+                          </Button>
                         </div>
-
-                        {isPurchase && (
-                          <p className="text-xs text-muted-foreground">
-                            Esta es una compra ya saldada. Para editarla o eliminarla, ve a{" "}
-                            <span className="font-medium">Compras</span>.
-                          </p>
-                        )}
                       </div>
                     )}
                   </div>
