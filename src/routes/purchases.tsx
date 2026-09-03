@@ -72,6 +72,7 @@ type PayableOut = {
   notes: string | null;
   days_old: number;
   overdue: boolean;
+  is_expense?: boolean;
   items?: {
     id: string;
     product_id: string | null;
@@ -225,7 +226,7 @@ function PurchasesPage() {
   });
 
   const filtered = useMemo(() => {
-    let list = purchases;
+    let list = purchases.filter((p) => p.items && p.items.length > 0);
     if (statusFilter !== "all") {
       list = list.filter((p) => {
         const isCredit = p.balance > 0;

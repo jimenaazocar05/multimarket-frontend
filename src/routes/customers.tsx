@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiGet, apiPost, apiPut } from "@/lib/api";
+import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 import type { Customer, Sale } from "@/lib/api";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -9,8 +9,18 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from "@/components/ui/alert-dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, SortableHead } from "@/components/ui/table";
-import { Plus, Pencil, Eye } from "lucide-react";
+import { Plus, Pencil, Eye, Trash2 } from "lucide-react";
 import { money, formatDate } from "@/lib/format";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -35,6 +45,7 @@ function Customers() {
   const [q, setQ] = useState("");
   const [editing, setEditing] = useState<CustomerForm | null>(null);
   const [viewing, setViewing] = useState<Customer | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Customer | null>(null);
 
   const { data: customers = [] } = useQuery({
     queryKey: ["customers-full"],
@@ -57,6 +68,12 @@ function Customers() {
       }
     },
     onSuccess: () => { toast.success("Guardado"); setEditing(null); qc.invalidateQueries(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const remove = useMutation({
+    mutationFn: (id: string) => apiDelete<void>(`/api/customers/${id}`),
+    onSuccess: () => { toast.success("Cliente eliminado"); setDeleteTarget(null); qc.invalidateQueries(); },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -96,6 +113,7 @@ function Customers() {
                     <div className="flex gap-1">
                       <Button variant="ghost" size="icon" onClick={() => setViewing(c)}><Eye className="h-4 w-4" /></Button>
                       <Button variant="ghost" size="icon" onClick={() => setEditing({ id: c.id, name: c.name, phone: c.phone ?? "", notes: c.notes ?? "" })}><Pencil className="h-4 w-4" /></Button>
+                      <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(c)}><Trash2 className="h-4 w-4" /></Button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -124,6 +142,31 @@ function Customers() {
       </Dialog>
 
       <CustomerHistoryDialog customer={viewing} onClose={() => setViewing(null)} />
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar este cliente?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminará a <strong>{deleteTarget?.name}</strong>. Sus ventas registradas se conservarán,
+              pero quedarán sin cliente asociado. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={remove.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                if (deleteTarget) remove.mutate(deleteTarget.id);
+              }}
+            >
+              {remove.isPending ? "Eliminando…" : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

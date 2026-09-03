@@ -44,6 +44,7 @@ function DailySales() {
     p.product_name.toLowerCase().includes(search.trim().toLowerCase())
   );
   const { sorted, sortKey, sortOrder, handleSort } = useTableSort(items, "product_name", "asc");
+  const totalQuantity = (report?.items ?? []).reduce((sum, p) => sum + p.quantity, 0);
 
   const exportExcel = () => {
     if (!report) return;
@@ -95,10 +96,11 @@ function DailySales() {
       </Card>
 
       {report && (
-        <div className="grid gap-4 grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 grid-cols-2 lg:grid-cols-4">
           <Stat title="Venta" value={money(report.total_sales)} />
           <Stat title="Costo" value={money(report.total_cost)} />
           <Stat title="Utilidad" value={money(report.total_profit)} highlight />
+          <Stat title="Productos vendidos" value={totalQuantity.toLocaleString("en-US", { maximumFractionDigits: 2 })} />
         </div>
       )}
 

@@ -59,6 +59,7 @@ type PayableOut = {
   notes: string | null;
   days_old: number;
   overdue: boolean;
+  is_expense: boolean;
   items?: { id: string; product_name: string; quantity: number; unit_cost: number; subtotal: number }[];
 };
 
@@ -77,11 +78,13 @@ function ExpensesPage() {
     enabled: !!from && !!to,
   });
 
-  // Un "gasto" es una cuenta por pagar sin productos asociados: registrada
-  // directamente en Punto de gastos o en Cuentas por pagar. Las compras a
-  // proveedores (con productos asociados) nunca cuentan como gasto operativo.
+  // is_expense lo calcula el backend: cuentas sin productos cuyo proveedor
+  // (si tiene) nunca registró una compra con productos, y con algo abonado
+  // — así se excluyen deudas/facturas a proveedores de mercancía. No hace
+  // falta que estén saldadas del todo: se cuenta el monto abonado, y ese
+  // monto va creciendo a medida que se registran más abonos.
   const expenses = useMemo(
-    () => payables.filter((p) => !p.items || p.items.length === 0),
+    () => payables.filter((p) => p.is_expense),
     [payables],
   );
 
@@ -106,7 +109,7 @@ function ExpensesPage() {
     );
   }, [expenses, search]);
 
-  const totalGastos = filtered.reduce((s, p) => s + Number(p.amount), 0);
+  const totalGastos = filtered.reduce((s, p) => s + Number(p.amount_paid), 0);
 
   const exportExcel = () => {
     exportToExcel(`gastos_${from}_${to}`, [
@@ -123,7 +126,9 @@ function ExpensesPage() {
           Concepto: p.concept,
           Proveedor: p.supplier_name ?? "—",
           Fecha: p.issue_date,
-          Total: Number(p.amount),
+          Abonado: Number(p.amount_paid),
+          "Monto total": Number(p.amount),
+          Saldo: Number(p.balance),
         })),
       },
     ]);
@@ -206,7 +211,7 @@ function ExpensesPage() {
               <div className="hidden sm:grid grid-cols-[1fr_140px_120px_40px] gap-4 px-5 py-2.5 text-xs font-semibold text-muted-foreground uppercase tracking-wide bg-muted/40">
                 <span>Concepto / Proveedor</span>
                 <span>Fecha</span>
-                <span className="text-right">Total</span>
+                <span className="text-right">Abonado</span>
                 <span />
               </div>
 
@@ -224,6 +229,9 @@ function ExpensesPage() {
                           <div className="font-medium text-sm truncate">{expense.concept}</div>
                           <div className="text-xs text-muted-foreground font-medium mt-0.5 truncate">
                             {expense.supplier_name ?? "—"}
+                            {expense.balance > 0.001 && (
+                              <span className="text-amber-600"> · pendiente {money(Number(expense.balance))}</span>
+                            )}
                           </div>
                         </div>
 
@@ -232,11 +240,11 @@ function ExpensesPage() {
                         </div>
 
                         <div className="text-sm font-semibold tabular-nums text-right hidden sm:block">
-                          {money(Number(expense.amount))}
+                          {money(Number(expense.amount_paid))}
                         </div>
 
                         <div className="sm:hidden flex items-center justify-end">
-                          <span className="font-semibold text-sm tabular-nums">{money(Number(expense.amount))}</span>
+                          <span className="font-semibold text-sm tabular-nums">{money(Number(expense.amount_paid))}</span>
                         </div>
 
                         <div className="flex justify-center text-muted-foreground">
@@ -285,7 +293,7 @@ function ExpensesPage() {
             <AlertDialogTitle>¿Eliminar este gasto?</AlertDialogTitle>
             <AlertDialogDescription>
               Se eliminará el gasto <strong>{deleteTarget?.concept}</strong> por{" "}
-              <strong>{deleteTarget ? money(Number(deleteTarget.amount)) : ""}</strong>. Esta acción no se puede deshacer.
+              <strong>{deleteTarget ? money(Number(deleteTarget.amount_paid)) : ""}</strong>. Esta acción no se puede deshacer.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

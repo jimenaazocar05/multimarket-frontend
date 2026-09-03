@@ -166,6 +166,7 @@ export type Payable = {
   notes: string | null;
   days_old: number;
   overdue: boolean;
+  is_expense: boolean;
   payments: Payment[];
   items: PurchaseItem[];
 };
