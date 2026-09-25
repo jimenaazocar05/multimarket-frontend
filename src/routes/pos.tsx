@@ -105,6 +105,12 @@ function POS() {
 
   const total = cart.reduce((s, i) => s + i.quantity * i.unit_price, 0);
 
+  // Se lee del listado (no del objeto seleccionado) para tener el saldo al día.
+  const customerCredit = selectedCustomer
+    ? Number(customers.find((c) => c.id === selectedCustomer.id)?.credit_balance ?? 0)
+    : 0;
+  const creditToApply = status === "credit" ? Math.min(customerCredit, total) : 0;
+
   const save = useMutation({
     mutationFn: async () => {
       if (cart.length === 0) throw new Error("Agrega al menos un producto.");
@@ -303,6 +309,19 @@ function POS() {
             <Button className="w-full" size="lg" disabled={save.isPending || cart.length === 0} onClick={() => save.mutate()}>
               <Plus className="h-4 w-4 mr-1" /> {save.isPending ? "Guardando…" : "Registrar venta"}
             </Button>
+            {status === "credit" && customerCredit > 0.001 && (
+              <div className="rounded-md border border-success/40 bg-success/10 px-3 py-2 text-sm">
+                <div>
+                  {selectedCustomer?.name} tiene <strong className="tabular-nums text-success">{money(customerCredit)}</strong> de saldo a favor.
+                </div>
+                {total > 0 && (
+                  <div className="text-xs text-muted-foreground tabular-nums mt-0.5">
+                    Se descontarán {money(creditToApply)} de esta venta · queda por cobrar {money(Math.max(total - creditToApply, 0))}
+                    {customerCredit - creditToApply > 0.001 && <> · saldo a favor restante {money(customerCredit - creditToApply)}</>}
+                  </div>
+                )}
+              </div>
+            )}
             {status === "credit" && (
               <Badge variant="secondary" className="w-full justify-center">Se agregará a cuentas por cobrar</Badge>
             )}

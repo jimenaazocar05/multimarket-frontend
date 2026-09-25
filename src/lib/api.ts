@@ -69,6 +69,18 @@ export type Customer = {
   created_at: string;
   updated_at: string;
   agg: Agg;
+  /** Saldo a favor: excedente de abonos que se descuenta de la próxima venta fiada. */
+  credit_balance: number;
+};
+
+export type CreditMovement = {
+  id: string;
+  amount: number;
+  kind: "deposit" | "applied" | "refund";
+  sale_id: string | null;
+  movement_date: string;
+  notes: string | null;
+  created_at: string;
 };
 
 export type CustomerInput = { name: string; phone?: string | null; notes?: string | null };
@@ -117,6 +129,8 @@ export type Payment = {
   amount: number;
   payment_date: string;
   notes: string | null;
+  /** true si el abono se tomó del saldo a favor del cliente. */
+  from_credit?: boolean;
 };
 
 export type Sale = {

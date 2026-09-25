@@ -71,6 +71,16 @@ export async function registerPayment(input: {
   return apiPost<Payable>("/api/payables/pay", { payable_id: input.payable_id, amount: input.amount });
 }
 
+/** Abono a la deuda total de un cliente: se aplica a sus ventas fiadas más
+ * antiguas primero y el excedente queda como saldo a favor. */
+export async function payCustomer(input: { customer_id: string; amount: number }): Promise<{
+  applied: number;
+  credit_added: number;
+  credit_balance: number;
+}> {
+  return apiPost("/api/receivables/pay-customer", input);
+}
+
 /** Ajuste manual de stock. */
 export async function adjustStock(input: StockAdjustmentInput): Promise<Product> {
   return apiPost<Product>("/api/inventory/adjust", input);

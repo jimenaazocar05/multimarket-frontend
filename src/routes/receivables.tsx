@@ -3,8 +3,8 @@ import { z } from "zod";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { apiGet } from "@/lib/api";
-import type { Sale, Customer, Product } from "@/lib/api";
-import { updateSale, deleteSale, registerPayment } from "@/lib/data";
+import type { Sale, Customer, Product, CreditMovement } from "@/lib/api";
+import { updateSale, deleteSale, registerPayment, payCustomer } from "@/lib/data";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -58,6 +58,8 @@ type ReceivableGroup = {
   days_old: number;
   oldest_date: string;
   sales: Sale[];
+  /** Saldo a favor del cliente (excedente de abonos anteriores). */
+  credit_balance: number;
 };
 
 function groupByCustomer(data: Sale[]): ReceivableGroup[] {
@@ -69,7 +71,7 @@ function groupByCustomer(data: Sale[]): ReceivableGroup[] {
     if (!g) {
       g = {
         key, customer_id: s.customer_id, customer_name: s.customer_name,
-        total: 0, amount_paid: 0, balance: 0, days_old: 0, oldest_date: s.sale_date, sales: [],
+        total: 0, amount_paid: 0, balance: 0, days_old: 0, oldest_date: "", sales: [], credit_balance: 0,
       };
       map.set(key, g);
     }
@@ -77,11 +79,19 @@ function groupByCustomer(data: Sale[]): ReceivableGroup[] {
     g.total += Number(s.total);
     g.amount_paid += Number(s.amount_paid);
     g.balance += balance;
-    g.days_old = Math.max(g.days_old, daysBetween(today, new Date(s.sale_date)));
-    if (s.sale_date < g.oldest_date) g.oldest_date = s.sale_date;
+    // Fecha y antigüedad salen solo de las ventas aún pendientes: una
+    // cuenta ya saldada no debe seguir marcando al cliente como atrasado.
+    if (balance > 0.001) {
+      g.days_old = Math.max(g.days_old, daysBetween(today, new Date(s.sale_date)));
+      if (!g.oldest_date || s.sale_date < g.oldest_date) g.oldest_date = s.sale_date;
+    }
     g.sales.push(s);
   }
-  for (const g of map.values()) g.sales.sort((a, b) => a.sale_date.localeCompare(b.sale_date));
+  for (const g of map.values()) {
+    g.sales.sort((a, b) => a.sale_date.localeCompare(b.sale_date));
+    // Cliente al día: se muestra la fecha de su última compra.
+    if (!g.oldest_date) g.oldest_date = g.sales[g.sales.length - 1].sale_date;
+  }
   return Array.from(map.values());
 }
 
@@ -154,6 +164,12 @@ function Receivables() {
     enabled: !!editing,
   });
 
+  const creditByCustomerId = useMemo(() => {
+    const map = new Map<string, number>();
+    customers.forEach((c) => { if (Number(c.credit_balance) > 0.001) map.set(c.id, Number(c.credit_balance)); });
+    return map;
+  }, [customers]);
+
   const phoneByCustomerId = useMemo(() => {
     const map = new Map<string, string>();
     customers.forEach((c) => { if (c.phone) map.set(c.id, c.phone); });
@@ -178,7 +194,13 @@ function Receivables() {
     });
   }, [dateFiltered, statusFilter]);
 
-  const groups = useMemo(() => groupByCustomer(statusFiltered), [statusFiltered]);
+  const groups = useMemo(
+    () => groupByCustomer(statusFiltered).map((g) => ({
+      ...g,
+      credit_balance: g.customer_id ? creditByCustomerId.get(g.customer_id) ?? 0 : 0,
+    })),
+    [statusFiltered, creditByCustomerId],
+  );
 
   const filteredGroups = useMemo(() => {
     if (!q.trim()) return groups;
@@ -201,7 +223,7 @@ function Receivables() {
         name: "Detalle",
         rows: sorted.map((g) => ({
           Fecha: g.oldest_date, Cliente: g.customer_name || "—",
-          Total: g.total, Pagado: g.amount_paid, Saldo: g.balance, "Antigüedad (días)": g.days_old,
+          Total: g.total, Pagado: g.amount_paid, Saldo: g.balance, "Saldo a favor": g.credit_balance, "Antigüedad (días)": g.days_old,
         })),
       },
     ]);
@@ -286,11 +308,26 @@ function Receivables() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  // Deuda real del cliente (sin filtros de fecha/estado): el backend reparte
+  // el abono entre todas sus ventas fiadas pendientes.
+  const payingDebt = useMemo(() => {
+    if (!paying) return 0;
+    if (!paying.customer_id) return paying.balance;
+    return data
+      .filter((s) => s.customer_id === paying.customer_id)
+      .reduce((sum, s) => sum + Math.max(Number(s.total) - Number(s.amount_paid), 0), 0);
+  }, [paying, data]);
+
   const pay = useMutation({
     mutationFn: async () => {
       if (!paying) return;
       const v = Number(amount);
       if (!v || v <= 0) throw new Error("Monto inválido.");
+      if (paying.customer_id) {
+        // El backend reparte el abono (más antiguas primero) y guarda el
+        // excedente como saldo a favor del cliente.
+        return payCustomer({ customer_id: paying.customer_id, amount: v });
+      }
       if (v > paying.balance + 0.001) throw new Error("El abono supera el saldo.");
       // Se aplica a las ventas más antiguas primero.
       let remainingCents = Math.round(v * 100);
@@ -305,7 +342,14 @@ function Receivables() {
         }
       }
     },
-    onSuccess: () => { toast.success("Abono registrado"); setPaying(null); setAmount(""); qc.invalidateQueries(); },
+    onSuccess: (res) => {
+      if (res && res.credit_added > 0) {
+        toast.success(`Abono registrado. ${money(res.credit_added)} quedaron como saldo a favor (total a favor: ${money(res.credit_balance)}).`);
+      } else {
+        toast.success("Abono registrado");
+      }
+      setPaying(null); setAmount(""); qc.invalidateQueries();
+    },
     onError: (e: Error) => toast.error(e.message),
   });
 
@@ -403,9 +447,14 @@ function Receivables() {
                     <TableCell className="text-right tabular-nums font-medium">
                       <div>{money(g.balance)}</div>
                       {rateNum > 0 && <div className="text-xs font-normal text-muted-foreground">{bs(g.balance)}</div>}
+                      {g.credit_balance > 0.001 && (
+                        <div className="text-xs font-normal text-success">A favor {money(g.credit_balance)}</div>
+                      )}
                     </TableCell>
                     <TableCell className="hidden sm:table-cell">
-                      {isPaid ? (
+                      {isPaid && g.credit_balance > 0.001 ? (
+                        <Badge variant="outline" className="border-success text-success">Saldo a favor</Badge>
+                      ) : isPaid ? (
                         <Badge variant="default">Pagada</Badge>
                       ) : (
                         <Badge variant={g.days_old > 30 ? "destructive" : g.days_old > 15 ? "secondary" : "outline"}>
@@ -418,7 +467,7 @@ function Receivables() {
                         <Button variant="ghost" size="icon" onClick={() => setViewing(g)} title="Ver detalle">
                           <Eye className="h-4 w-4" />
                         </Button>
-                        {!isPaid && (
+                        {(!isPaid || g.customer_id) && (
                           <Button size="sm" variant="outline" onClick={() => setPaying(g)}>
                             <HandCoins className="h-4 w-4 mr-1" /> Abonar
                           </Button>
@@ -444,12 +493,17 @@ function Receivables() {
           <div className="space-y-3">
             <p className="text-sm">Cliente: <strong>{paying?.customer_name}</strong></p>
             <p className="text-sm">
-              Saldo pendiente: <strong className="tabular-nums">{paying && money(paying.balance)}</strong>
-              {rateNum > 0 && paying && <span className="text-muted-foreground tabular-nums"> ({bs(paying.balance)})</span>}
+              Saldo pendiente: <strong className="tabular-nums">{paying && money(payingDebt)}</strong>
+              {rateNum > 0 && paying && <span className="text-muted-foreground tabular-nums"> ({bs(payingDebt)})</span>}
             </p>
-            {paying && paying.sales.length > 1 && (
+            {paying && paying.credit_balance > 0.001 && (
+              <p className="text-sm">
+                Saldo a favor actual: <strong className="tabular-nums text-success">{money(paying.credit_balance)}</strong>
+              </p>
+            )}
+            {paying && paying.sales.filter((s) => Number(s.total) - Number(s.amount_paid) > 0.001).length > 1 && (
               <p className="text-xs text-muted-foreground">
-                Tiene {paying.sales.length} compras pendientes. El abono se aplica primero a la más antigua.
+                Tiene {paying.sales.filter((s) => Number(s.total) - Number(s.amount_paid) > 0.001).length} compras pendientes. El abono se aplica primero a la más antigua.
               </p>
             )}
             <div>
@@ -458,9 +512,22 @@ function Receivables() {
               {rateNum > 0 && Number(amount) > 0 && (
                 <p className="text-xs text-muted-foreground mt-1 tabular-nums">≈ {bs(Number(amount))}</p>
               )}
+              {paying && Number(amount) > payingDebt + 0.001 && (
+                paying.customer_id ? (
+                  <p className="text-xs text-success mt-1 tabular-nums">
+                    Se aplicarán {money(payingDebt)} a la deuda y{" "}
+                    <strong>{money(Number(amount) - payingDebt)}</strong> quedarán como saldo a favor,
+                    que se descontará en su próxima compra fiada.
+                  </p>
+                ) : (
+                  <p className="text-xs text-destructive mt-1">
+                    Esta venta no tiene cliente asignado: el abono no puede superar el saldo.
+                  </p>
+                )
+              )}
             </div>
             <div className="flex gap-2">
-              <Button variant="outline" size="sm" onClick={() => paying && setAmount(String(paying.balance))}>Total ({paying && money(paying.balance)})</Button>
+              <Button variant="outline" size="sm" onClick={() => paying && setAmount(String(Math.round(payingDebt * 100) / 100))}>Total ({paying && money(payingDebt)})</Button>
             </div>
           </div>
           <DialogFooter>
@@ -686,6 +753,9 @@ function CustomerDetailDialog({
         <DialogHeader><DialogTitle>{group?.customer_name || "Cliente"}</DialogTitle></DialogHeader>
         {group && (
           <div className="space-y-4 max-h-[60vh] overflow-auto">
+            {group.customer_id && (
+              <CreditSection customerId={group.customer_id} creditBalance={group.credit_balance} rateNum={rateNum} bs={bs} />
+            )}
             {group.sales.map((sale) => {
               const balance = Number(sale.total) - Number(sale.amount_paid);
               const isOverdue = balance > 0.001 && daysBetween(new Date(), new Date(sale.sale_date)) > 7;
@@ -774,11 +844,17 @@ function SalePaymentsTable({ payments, rateNum, bs }: { payments: Sale["payments
         {sorted.map((p) => (
           <TableRow key={p.id}>
             <TableCell className="py-1 text-xs">{formatDate(p.payment_date)}</TableCell>
-            <TableCell className="py-1 text-right tabular-nums text-success">
+            <TableCell className={cn("py-1 text-right tabular-nums", p.from_credit ? "text-foreground" : "text-success")}>
               <div>{money(Number(p.amount))}</div>
               {rateNum > 0 && <div className="text-xs text-muted-foreground">{bs(Number(p.amount))}</div>}
             </TableCell>
-            <TableCell className="py-1 text-xs text-muted-foreground">{p.notes || "—"}</TableCell>
+            <TableCell className="py-1 text-xs text-muted-foreground">
+              {p.from_credit ? (
+                <Badge variant="outline" className="border-success text-success">Descontado del saldo a favor</Badge>
+              ) : (
+                p.notes || "—"
+              )}
+            </TableCell>
           </TableRow>
         ))}
         {payments.length === 0 && (
@@ -786,5 +862,74 @@ function SalePaymentsTable({ payments, rateNum, bs }: { payments: Sale["payments
         )}
       </TableBody>
     </Table>
+  );
+}
+
+const CREDIT_KIND_LABEL: Record<CreditMovement["kind"], string> = {
+  deposit: "Excedente de abono",
+  applied: "Descontado en venta fiada",
+  refund: "Devuelto (venta eliminada)",
+};
+
+function CreditSection({
+  customerId,
+  creditBalance,
+  rateNum,
+  bs,
+}: {
+  customerId: string;
+  creditBalance: number;
+  rateNum: number;
+  bs: (usd: number) => string;
+}) {
+  const { data: movements = [] } = useQuery({
+    queryKey: ["customer-credit-movements", customerId],
+    queryFn: () => apiGet<CreditMovement[]>(`/api/customers/${customerId}/credit-movements`),
+  });
+
+  if (movements.length === 0 && creditBalance <= 0.001) return null;
+
+  // Saldo acumulado tras cada movimiento, para ver cómo se fue descontando.
+  let running = 0;
+  const rows = movements.map((m) => {
+    running += Number(m.amount);
+    return { ...m, running };
+  });
+
+  return (
+    <div className="border rounded-md p-3 space-y-2 border-success/40 bg-success/5">
+      <div className="flex items-center justify-between text-sm">
+        <span className="font-medium">Saldo a favor</span>
+        <span className="tabular-nums text-right">
+          <strong className="text-success">{money(creditBalance)}</strong>
+          {rateNum > 0 && <span className="block text-xs text-muted-foreground">{bs(creditBalance)}</span>}
+        </span>
+      </div>
+      {rows.length > 0 && (
+        <Table>
+          <TableHeader><TableRow>
+            <TableHead className="h-8">Fecha</TableHead>
+            <TableHead className="h-8">Movimiento</TableHead>
+            <TableHead className="h-8 text-right">Monto</TableHead>
+            <TableHead className="h-8 text-right">Saldo</TableHead>
+          </TableRow></TableHeader>
+          <TableBody>
+            {rows.map((m) => {
+              const amt = Number(m.amount);
+              return (
+                <TableRow key={m.id}>
+                  <TableCell className="py-1 text-xs">{formatDate(m.movement_date)}</TableCell>
+                  <TableCell className="py-1 text-xs">{CREDIT_KIND_LABEL[m.kind] ?? m.kind}</TableCell>
+                  <TableCell className={cn("py-1 text-right tabular-nums", amt >= 0 ? "text-success" : "text-destructive")}>
+                    {amt >= 0 ? "+" : "−"}{money(Math.abs(amt))}
+                  </TableCell>
+                  <TableCell className="py-1 text-right tabular-nums">{money(m.running)}</TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      )}
+    </div>
   );
 }
