@@ -1,7 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { apiGet, apiPost, apiPut } from "@/lib/api";
+import { apiDelete, apiGet, apiPost, apiPut } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
+import { exportToPDF } from "@/lib/export";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
+  AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import type { InventoryMovement } from "@/lib/api";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -11,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from "@/components/ui/dialog";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow, SortableHead } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Pencil, Plus, PackagePlus, History } from "lucide-react";
+import { Pencil, Plus, PackagePlus, History, Trash2, FileDown } from "lucide-react";
 import { money, formatDateTime } from "@/lib/format";
 import { adjustStock, type Product } from "@/lib/data";
 import { useTableSort } from "@/lib/sort";
@@ -39,6 +45,9 @@ function Inventory() {
   const [editing, setEditing] = useState<Partial<Product> | null>(null);
   const [adjustProduct, setAdjustProduct] = useState<Product | null>(null);
   const [historyProduct, setHistoryProduct] = useState<Product | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Product | null>(null);
+  const { user } = useAuth();
+  const isAdmin = user?.role === "admin";
 
   const { data: products = [] } = useQuery({
     queryKey: ["products"],
@@ -80,6 +89,24 @@ function Inventory() {
     onError: (e: Error) => toast.error(e.message),
   });
 
+  const remove = useMutation({
+    mutationFn: (id: string) => apiDelete<void>(`/api/products/${id}`),
+    onSuccess: () => { toast.success("Producto eliminado"); setDeleteTarget(null); qc.invalidateQueries(); },
+    onError: (e: Error) => toast.error(e.message),
+  });
+
+  const exportPriceList = () => {
+    const rows = sorted.filter((p) => p.active).map((p) => [p.name, p.unit || "", money(Number(p.price))]);
+    if (rows.length === 0) { toast.error("No hay productos para exportar."); return; }
+    exportToPDF({
+      filename: "lista_de_precios",
+      title: "Lista de precios",
+      subtitle: new Date().toLocaleDateString("es-VE"),
+      columns: ["Producto", "Unidad", "Precio"],
+      rows,
+    });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex flex-wrap items-end justify-between gap-3">
@@ -91,6 +118,7 @@ function Inventory() {
         </div>
         <div className="flex flex-col gap-2 w-full sm:flex-row sm:w-auto">
           <Input placeholder="Buscar…" value={q} onChange={(e) => setQ(e.target.value)} className="w-full sm:w-56" />
+          <Button variant="outline" className="w-full sm:w-auto" onClick={exportPriceList}><FileDown className="h-4 w-4 mr-1" /> Lista de precios (PDF)</Button>
           <Button className="w-full sm:w-auto" onClick={() => setEditing({ ...empty })}><Plus className="h-4 w-4 mr-1" /> Nuevo</Button>
         </div>
       </div>
@@ -132,6 +160,9 @@ function Inventory() {
                         <Button variant="ghost" size="icon" onClick={() => setEditing(p)} title="Editar"><Pencil className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" onClick={() => setAdjustProduct(p)} title="Ajustar stock"><PackagePlus className="h-4 w-4" /></Button>
                         <Button variant="ghost" size="icon" onClick={() => setHistoryProduct(p)} title="Historial"><History className="h-4 w-4" /></Button>
+                        {isAdmin && (
+                          <Button variant="ghost" size="icon" onClick={() => setDeleteTarget(p)} title="Eliminar"><Trash2 className="h-4 w-4 text-destructive" /></Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -175,6 +206,31 @@ function Inventory() {
 
       <AdjustDialog product={adjustProduct} onClose={() => setAdjustProduct(null)} onDone={() => qc.invalidateQueries()} />
       <HistoryDialog product={historyProduct} onClose={() => setHistoryProduct(null)} />
+
+      <AlertDialog open={!!deleteTarget} onOpenChange={(o) => !o && setDeleteTarget(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>¿Eliminar este producto?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Se eliminará <strong>{deleteTarget?.name}</strong> junto con su historial de movimientos y precios.
+              Las ventas y compras registradas se conservarán. Esta acción no se puede deshacer.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={remove.isPending}
+              onClick={(e) => {
+                e.preventDefault();
+                if (deleteTarget) remove.mutate(deleteTarget.id);
+              }}
+            >
+              {remove.isPending ? "Eliminando…" : "Eliminar"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
