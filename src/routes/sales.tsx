@@ -397,9 +397,6 @@ function SalesPage() {
                           <div className="font-medium text-sm truncate">
                             {sale.customer_name ?? "Venta de mostrador"}
                           </div>
-                          <div className="text-xs text-muted-foreground font-mono mt-0.5 hidden sm:block">
-                            #{sale.id.slice(0, 8)}
-                          </div>
                         </div>
 
                         <div className="text-sm text-muted-foreground hidden sm:block">
